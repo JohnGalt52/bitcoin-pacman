@@ -3,9 +3,19 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
+// Make canvas focusable for keyboard input
+canvas.tabIndex = 1;
+canvas.focus();
+
 // Increase canvas resolution for sharper graphics
 canvas.width = 560;  // 28 * 20
 canvas.height = 620; // 31 * 20
+
+// Load original Pac-Man image
+const pacmanImg = new Image();
+pacmanImg.src = 'pacman.jpg';
+let pacmanLoaded = false;
+pacmanImg.onload = () => { pacmanLoaded = true; console.log('Pac-Man image loaded!'); };
 
 // Game constants
 const TILE_SIZE = 20;
@@ -36,8 +46,10 @@ const player = {
     animFrame: 0
 };
 
-// High-resolution Bitcoin Pac-Man sprite (drawn programmatically)
-function drawBitcoinPacman(x, y, size, direction, mouthOpen) {
+// Draw Pac-Man using original image with rotation
+function drawPacmanImage(x, y, size, direction) {
+    if (!pacmanLoaded) return;
+    
     ctx.save();
     ctx.translate(x + size/2, y + size/2);
     
@@ -45,29 +57,8 @@ function drawBitcoinPacman(x, y, size, direction, mouthOpen) {
     const rotations = { right: 0, down: Math.PI/2, left: Math.PI, up: -Math.PI/2 };
     ctx.rotate(rotations[direction] || 0);
     
-    // Mouth angle animation
-    const mouthAngle = mouthOpen ? 0.25 : 0.05;
-    
-    // Draw Pac-Man body (Bitcoin orange)
-    ctx.fillStyle = '#f7931a';
-    ctx.beginPath();
-    ctx.arc(0, 0, size/2 - 1, mouthAngle * Math.PI, -mouthAngle * Math.PI);
-    ctx.lineTo(0, 0);
-    ctx.closePath();
-    ctx.fill();
-    
-    // Bitcoin symbol on body
-    ctx.fillStyle = '#fff';
-    ctx.font = `bold ${size/2}px Arial`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('₿', -2, 0);
-    
-    // Eye
-    ctx.fillStyle = '#000';
-    ctx.beginPath();
-    ctx.arc(-3, -size/4, 2, 0, Math.PI * 2);
-    ctx.fill();
+    // Draw the original image centered and scaled
+    ctx.drawImage(pacmanImg, -size/2, -size/2, size, size);
     
     ctx.restore();
 }
@@ -419,18 +410,11 @@ function drawMaze() {
 
 // Draw player
 function drawPlayer() {
-    // Animate mouth
-    player.animFrame++;
-    if (player.animFrame % 8 === 0) {
-        player.mouthOpen = !player.mouthOpen;
-    }
-    
-    drawBitcoinPacman(
+    drawPacmanImage(
         player.pixelX, 
         player.pixelY, 
         TILE_SIZE, 
-        player.direction, 
-        player.mouthOpen
+        player.direction
     );
 }
 
@@ -818,7 +802,19 @@ function gameOver() {
 }
 
 // Keyboard controls
-document.addEventListener('keydown', (e) => {
+// Click to focus canvas (needed for keyboard input)
+canvas.addEventListener('click', () => {
+    canvas.focus();
+    if (audioContext.state === 'suspended') {
+        audioContext.resume();
+    }
+    if (!sirenPlaying && gameRunning) {
+        startSiren();
+    }
+});
+
+// Keyboard controls - listen on both document and canvas
+function handleKeydown(e) {
     // Resume audio context on first interaction
     if (audioContext.state === 'suspended') {
         audioContext.resume();
@@ -841,7 +837,10 @@ document.addEventListener('keydown', (e) => {
         player.nextDirection = keyMap[e.key];
         e.preventDefault();
     }
-});
+}
+
+document.addEventListener('keydown', handleKeydown);
+canvas.addEventListener('keydown', handleKeydown);
 
 // Game loop
 function gameLoop() {
