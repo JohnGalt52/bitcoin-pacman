@@ -41,7 +41,7 @@ const player = {
     pixelY: 23 * TILE_SIZE,
     direction: 'right',
     nextDirection: 'right',
-    speed: 2,
+    speed: 4,  // Increased from 2
     mouthOpen: true,
     animFrame: 0
 };
@@ -476,14 +476,17 @@ function movePlayer() {
     
     const centerX = player.gridX * TILE_SIZE;
     const centerY = player.gridY * TILE_SIZE;
-    const isCentered = Math.abs(player.pixelX - centerX) < 2 && Math.abs(player.pixelY - centerY) < 2;
+    const isCentered = Math.abs(player.pixelX - centerX) < player.speed && Math.abs(player.pixelY - centerY) < player.speed;
     
+    // Try to change direction when centered on a tile
     if (isCentered && isWalkable(tryGridX, tryGridY)) {
         player.direction = player.nextDirection;
+        // Snap to grid center to prevent drift
         player.pixelX = centerX;
         player.pixelY = centerY;
     }
     
+    // Calculate new position
     let newPixelX = player.pixelX;
     let newPixelY = player.pixelY;
     
@@ -492,14 +495,33 @@ function movePlayer() {
     else if (player.direction === 'left') newPixelX -= player.speed;
     else if (player.direction === 'right') newPixelX += player.speed;
     
-    const nextGridX = Math.round(newPixelX / TILE_SIZE);
-    const nextGridY = Math.round(newPixelY / TILE_SIZE);
+    // Check collision at the leading edge of movement
+    let canMove = true;
+    const margin = 2; // Small margin to prevent wall sticking
     
-    if (isWalkable(nextGridX, nextGridY)) {
+    if (player.direction === 'up') {
+        const checkY = Math.floor((newPixelY + margin) / TILE_SIZE);
+        const checkX = Math.floor((player.pixelX + TILE_SIZE/2) / TILE_SIZE);
+        canMove = isWalkable(checkX, checkY);
+    } else if (player.direction === 'down') {
+        const checkY = Math.floor((newPixelY + TILE_SIZE - margin) / TILE_SIZE);
+        const checkX = Math.floor((player.pixelX + TILE_SIZE/2) / TILE_SIZE);
+        canMove = isWalkable(checkX, checkY);
+    } else if (player.direction === 'left') {
+        const checkX = Math.floor((newPixelX + margin) / TILE_SIZE);
+        const checkY = Math.floor((player.pixelY + TILE_SIZE/2) / TILE_SIZE);
+        canMove = isWalkable(checkX, checkY);
+    } else if (player.direction === 'right') {
+        const checkX = Math.floor((newPixelX + TILE_SIZE - margin) / TILE_SIZE);
+        const checkY = Math.floor((player.pixelY + TILE_SIZE/2) / TILE_SIZE);
+        canMove = isWalkable(checkX, checkY);
+    }
+    
+    if (canMove) {
         player.pixelX = newPixelX;
         player.pixelY = newPixelY;
-        player.gridX = Math.round(player.pixelX / TILE_SIZE);
-        player.gridY = Math.round(player.pixelY / TILE_SIZE);
+        player.gridX = Math.floor((player.pixelX + TILE_SIZE/2) / TILE_SIZE);
+        player.gridY = Math.floor((player.pixelY + TILE_SIZE/2) / TILE_SIZE);
         
         // Wrap around tunnel
         if (player.pixelX < -TILE_SIZE) {
