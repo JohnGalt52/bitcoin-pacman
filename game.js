@@ -41,7 +41,7 @@ const player = {
     pixelY: 23 * TILE_SIZE,
     direction: 'right',
     nextDirection: 'right',
-    speed: 4,  // Increased from 2
+    speed: 2,  // Balanced speed
     mouthOpen: true,
     animFrame: 0
 };
@@ -572,7 +572,7 @@ function movePlayer() {
 
 // Ghost AI
 function moveGhosts() {
-    const ghostSpeed = 1.8 + (level * 0.1);
+    const ghostSpeed = 2.2 + (level * 0.15);  // Faster ghosts, better chase
     
     ghosts.forEach(ghost => {
         if (ghost.eaten) {
@@ -593,11 +593,11 @@ function moveGhosts() {
             return;
         }
         
-        const speed = ghost.vulnerable ? ghostSpeed * 0.6 : ghostSpeed;
+        const speed = ghost.vulnerable ? ghostSpeed * 0.5 : ghostSpeed;
         
-        // Decision at tile center
-        if (Math.abs(ghost.pixelX - ghost.gridX * TILE_SIZE) < 2 && 
-            Math.abs(ghost.pixelY - ghost.gridY * TILE_SIZE) < 2) {
+        // Decision at tile center - use speed as threshold to prevent getting stuck
+        if (Math.abs(ghost.pixelX - ghost.gridX * TILE_SIZE) < speed && 
+            Math.abs(ghost.pixelY - ghost.gridY * TILE_SIZE) < speed) {
             
             ghost.pixelX = ghost.gridX * TILE_SIZE;
             ghost.pixelY = ghost.gridY * TILE_SIZE;
@@ -681,7 +681,8 @@ function checkGhostCollision() {
     ghosts.forEach(ghost => {
         if (ghost.eaten) return;
         
-        if (checkCollision(player.pixelX, player.pixelY, ghost.pixelX, ghost.pixelY, 12)) {
+        if (checkCollision(player.pixelX, player.pixelY, ghost.pixelX, ghost.pixelY, 14)) {
+            // Ghost is edible if vulnerable (blue/scared state)
             if (ghost.vulnerable) {
                 ghost.eaten = true;
                 ghost.vulnerable = false;
@@ -868,7 +869,12 @@ canvas.addEventListener('keydown', handleKeydown);
 function gameLoop() {
     if (!gameRunning) return;
     
-    // Check power mode timer
+    // Move and check collisions FIRST
+    movePlayer();
+    moveGhosts();
+    checkGhostCollision();
+    
+    // THEN check power mode timer (so player gets last chance to eat ghosts)
     if (powerMode && Date.now() >= powerModeTimer) {
         powerMode = false;
         ghostEatCombo = 0;
@@ -876,13 +882,11 @@ function gameLoop() {
         updateSirenForPowerMode();
     }
     
+    // Draw everything
     drawMaze();
     drawPlayer();
     drawGhosts();
     drawFloatingPoints();
-    movePlayer();
-    moveGhosts();
-    checkGhostCollision();
     
     requestAnimationFrame(gameLoop);
 }
