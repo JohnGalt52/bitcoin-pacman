@@ -46,9 +46,47 @@ const player = {
     animFrame: 0
 };
 
+// Create offscreen canvas to process Pac-Man image (remove white background)
+let pacmanProcessed = null;
+
+function processPacmanImage() {
+    if (!pacmanLoaded || pacmanProcessed) return;
+    
+    // Create offscreen canvas
+    const offscreen = document.createElement('canvas');
+    offscreen.width = pacmanImg.width;
+    offscreen.height = pacmanImg.height;
+    const offCtx = offscreen.getContext('2d');
+    
+    // Draw original image
+    offCtx.drawImage(pacmanImg, 0, 0);
+    
+    // Get image data and remove white pixels
+    const imageData = offCtx.getImageData(0, 0, offscreen.width, offscreen.height);
+    const data = imageData.data;
+    
+    for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        
+        // If pixel is white or near-white, make it transparent
+        if (r > 240 && g > 240 && b > 240) {
+            data[i + 3] = 0; // Set alpha to 0
+        }
+    }
+    
+    offCtx.putImageData(imageData, 0, 0);
+    pacmanProcessed = offscreen;
+    console.log('Pac-Man white background removed!');
+}
+
 // Draw Pac-Man using original image with rotation
 function drawPacmanImage(x, y, size, direction) {
     if (!pacmanLoaded) return;
+    
+    // Process image on first draw
+    if (!pacmanProcessed) processPacmanImage();
     
     ctx.save();
     ctx.translate(x + size/2, y + size/2);
@@ -57,18 +95,19 @@ function drawPacmanImage(x, y, size, direction) {
     const rotations = { right: 0, down: Math.PI/2, left: Math.PI, up: -Math.PI/2 };
     ctx.rotate(rotations[direction] || 0);
     
-    // Draw the original image centered and scaled
-    ctx.drawImage(pacmanImg, -size/2, -size/2, size, size);
+    // Draw the processed image (white background removed)
+    const img = pacmanProcessed || pacmanImg;
+    ctx.drawImage(img, -size/2, -size/2, size, size);
     
     ctx.restore();
 }
 
-// Shitcoin ghosts with real logo rendering
+// Shitcoin ghosts with real logo rendering - start outside ghost house
 const ghosts = [
-    { name: 'SOL', color: '#14F195', gradient: ['#14F195', '#9945FF'], gridX: 12, gridY: 11, pixelX: 12*TILE_SIZE, pixelY: 11*TILE_SIZE, direction: 'up', personality: 'chase', vulnerable: false, eaten: false, baseX: 12, baseY: 11 },
-    { name: 'ETH', color: '#627EEA', gradient: ['#627EEA', '#8A9EFF'], gridX: 13, gridY: 11, pixelX: 13*TILE_SIZE, pixelY: 11*TILE_SIZE, direction: 'up', personality: 'ambush', vulnerable: false, eaten: false, baseX: 13, baseY: 11 },
-    { name: 'ADA', color: '#0033AD', gradient: ['#0033AD', '#0052FF'], gridX: 14, gridY: 11, pixelX: 14*TILE_SIZE, pixelY: 11*TILE_SIZE, direction: 'up', personality: 'patrol', vulnerable: false, eaten: false, baseX: 14, baseY: 11 },
-    { name: 'XRP', color: '#23292F', gradient: ['#23292F', '#555'], gridX: 15, gridY: 11, pixelX: 15*TILE_SIZE, pixelY: 11*TILE_SIZE, direction: 'up', personality: 'random', vulnerable: false, eaten: false, baseX: 15, baseY: 11 }
+    { name: 'SOL', color: '#14F195', gradient: ['#14F195', '#9945FF'], gridX: 13, gridY: 11, pixelX: 13*TILE_SIZE, pixelY: 11*TILE_SIZE, direction: 'left', personality: 'chase', vulnerable: false, eaten: false, baseX: 13, baseY: 14 },
+    { name: 'ETH', color: '#627EEA', gradient: ['#627EEA', '#8A9EFF'], gridX: 14, gridY: 11, pixelX: 14*TILE_SIZE, pixelY: 11*TILE_SIZE, direction: 'right', personality: 'ambush', vulnerable: false, eaten: false, baseX: 14, baseY: 14 },
+    { name: 'ADA', color: '#0033AD', gradient: ['#0033AD', '#0052FF'], gridX: 12, gridY: 11, pixelX: 12*TILE_SIZE, pixelY: 11*TILE_SIZE, direction: 'left', personality: 'patrol', vulnerable: false, eaten: false, baseX: 13, baseY: 14 },
+    { name: 'XRP', color: '#23292F', gradient: ['#23292F', '#555'], gridX: 15, gridY: 11, pixelX: 15*TILE_SIZE, pixelY: 11*TILE_SIZE, direction: 'right', personality: 'random', vulnerable: false, eaten: false, baseX: 14, baseY: 14 }
 ];
 
 // Maze layout (0 = path, 1 = wall, 2 = pellet, 3 = power pellet)
@@ -631,10 +670,10 @@ function moveGhosts() {
             const opposite = { up: 'down', down: 'up', left: 'right', right: 'left' };
             let bestDir = ghost.direction;
             let bestDist = Infinity;
+            let validDirs = [];
             
+            // Find all valid directions (excluding 180 turns initially)
             for (const dir of dirs) {
-                if (dir === opposite[ghost.direction]) continue; // No 180s
-                
                 let testX = ghost.gridX;
                 let testY = ghost.gridY;
                 
@@ -644,12 +683,21 @@ function moveGhosts() {
                 else if (dir === 'right') testX++;
                 
                 if (isWalkable(testX, testY)) {
-                    const dist = Math.abs(testX - targetX) + Math.abs(testY - targetY);
-                    if (dist < bestDist) {
-                        bestDist = dist;
-                        bestDir = dir;
+                    validDirs.push({ dir, testX, testY });
+                    // Prefer non-180 turns
+                    if (dir !== opposite[ghost.direction]) {
+                        const dist = Math.abs(testX - targetX) + Math.abs(testY - targetY);
+                        if (dist < bestDist) {
+                            bestDist = dist;
+                            bestDir = dir;
+                        }
                     }
                 }
+            }
+            
+            // If stuck (no valid non-180 moves), allow 180 turn
+            if (bestDist === Infinity && validDirs.length > 0) {
+                bestDir = validDirs[0].dir;
             }
             
             ghost.direction = bestDir;
