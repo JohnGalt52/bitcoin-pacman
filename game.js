@@ -1,4 +1,4 @@
-// Bitcoin Pac-Man Game
+// Bitcoin Pac-Man Game - Classic Mechanics
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
@@ -15,25 +15,24 @@ let gameRunning = true;
 let pelletCount = 0;
 let powerMode = false;
 let powerModeTimer = 0;
-const POWER_MODE_DURATION = 5000; // 5 seconds
+const POWER_MODE_DURATION = 10000; // 10 seconds like original Pac-Man
 
-// Player
+// Player - grid-based position
 const player = {
-    x: 13,
-    y: 23,
+    gridX: 13,
+    gridY: 23,
+    pixelX: 13 * TILE_SIZE,
+    pixelY: 23 * TILE_SIZE,
     direction: 'right',
     nextDirection: 'right',
-    speed: 0.18,
-    image: null,
+    speed: 2, // pixels per frame
     imageLoaded: false
 };
 
-// Load player image
+// Load player image with transparency
 const playerImg = new Image();
 playerImg.src = 'pacman.jpg';
 playerImg.onload = () => {
-    player.imageLoaded = true;
-    // Remove white background by creating a canvas with transparency
     const tempCanvas = document.createElement('canvas');
     const tempCtx = tempCanvas.getContext('2d');
     tempCanvas.width = playerImg.width;
@@ -43,34 +42,32 @@ playerImg.onload = () => {
     const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
     const data = imageData.data;
     
-    // Remove white/light backgrounds
+    // Remove white background
     for (let i = 0; i < data.length; i += 4) {
         const r = data[i];
         const g = data[i + 1];
         const b = data[i + 2];
         
-        // If pixel is mostly white/light, make it transparent
-        if (r > 200 && g > 200 && b > 200) {
-            data[i + 3] = 0; // Set alpha to 0
+        if (r > 220 && g > 220 && b > 220) {
+            data[i + 3] = 0;
         }
     }
     
     tempCtx.putImageData(imageData, 0, 0);
-    
-    // Create new image from cleaned canvas
     const cleanImg = new Image();
     cleanImg.src = tempCanvas.toDataURL();
     cleanImg.onload = () => {
+        player.imageLoaded = true;
         playerImg.src = cleanImg.src;
     };
 };
 
-// Shitcoin ghosts
+// Shitcoin ghosts with unique AI personalities
 const ghosts = [
-    { name: 'SOL', color: '#14F195', x: 12, y: 11, direction: 'up', targetX: 0, targetY: 0, vulnerable: false, eaten: false, baseX: 12, baseY: 11 },
-    { name: 'ETH', color: '#627EEA', x: 13, y: 11, direction: 'up', targetX: 0, targetY: 0, vulnerable: false, eaten: false, baseX: 13, baseY: 11 },
-    { name: 'ADA', color: '#0033AD', x: 14, y: 11, direction: 'up', targetX: 0, targetY: 0, vulnerable: false, eaten: false, baseX: 14, baseY: 11 },
-    { name: 'XRP', color: '#23292F', x: 15, y: 11, direction: 'up', targetX: 0, targetY: 0, vulnerable: false, eaten: false, baseX: 15, baseY: 11 }
+    { name: 'SOL', color: '#14F195', gridX: 12, gridY: 11, pixelX: 12*TILE_SIZE, pixelY: 11*TILE_SIZE, direction: 'up', personality: 'chase', vulnerable: false, eaten: false, baseX: 12, baseY: 11 },
+    { name: 'ETH', color: '#627EEA', gridX: 13, gridY: 11, pixelX: 13*TILE_SIZE, pixelY: 11*TILE_SIZE, direction: 'up', personality: 'ambush', vulnerable: false, eaten: false, baseX: 13, baseY: 11 },
+    { name: 'ADA', color: '#0033AD', gridX: 14, gridY: 11, pixelX: 14*TILE_SIZE, pixelY: 11*TILE_SIZE, direction: 'up', personality: 'patrol', vulnerable: false, eaten: false, baseX: 14, baseY: 11 },
+    { name: 'XRP', color: '#23292F', gridX: 15, gridY: 11, pixelX: 15*TILE_SIZE, pixelY: 11*TILE_SIZE, direction: 'up', personality: 'random', vulnerable: false, eaten: false, baseX: 15, baseY: 11 }
 ];
 
 // Maze layout (0 = path, 1 = wall, 2 = pellet, 3 = power pellet)
@@ -121,7 +118,7 @@ function countPellets() {
 
 pelletCount = countPellets();
 
-// Sound effects (Web Audio API)
+// Sound effects
 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
 function playNomSound() {
@@ -171,18 +168,15 @@ function drawMaze() {
             const y = row * TILE_SIZE;
             
             if (cell === 1) {
-                // Wall
                 ctx.fillStyle = '#2121ff';
                 ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
                 ctx.strokeStyle = '#1a1aaa';
                 ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
             } else if (cell === 2) {
-                // Bitcoin pellet
                 ctx.fillStyle = '#f7931a';
                 ctx.font = 'bold 10px Arial';
                 ctx.fillText('₿', x + 5, y + 14);
             } else if (cell === 3) {
-                // Power pellet
                 ctx.fillStyle = '#f7931a';
                 ctx.beginPath();
                 ctx.arc(x + TILE_SIZE/2, y + TILE_SIZE/2, 6, 0, Math.PI * 2);
@@ -192,16 +186,12 @@ function drawMaze() {
     }
 }
 
-// Draw player
+// Draw player - centered and smooth
 function drawPlayer() {
-    const x = player.x * TILE_SIZE;
-    const y = player.y * TILE_SIZE;
-    
     if (player.imageLoaded) {
         ctx.save();
-        ctx.translate(x + TILE_SIZE/2, y + TILE_SIZE/2);
+        ctx.translate(player.pixelX + TILE_SIZE/2, player.pixelY + TILE_SIZE/2);
         
-        // Rotate based on direction
         if (player.direction === 'right') ctx.rotate(0);
         else if (player.direction === 'down') ctx.rotate(Math.PI / 2);
         else if (player.direction === 'left') ctx.rotate(Math.PI);
@@ -210,10 +200,9 @@ function drawPlayer() {
         ctx.drawImage(playerImg, -TILE_SIZE/2, -TILE_SIZE/2, TILE_SIZE, TILE_SIZE);
         ctx.restore();
     } else {
-        // Fallback yellow circle
         ctx.fillStyle = '#ffff00';
         ctx.beginPath();
-        ctx.arc(x + TILE_SIZE/2, y + TILE_SIZE/2, TILE_SIZE/2 - 2, 0, Math.PI * 2);
+        ctx.arc(player.pixelX + TILE_SIZE/2, player.pixelY + TILE_SIZE/2, TILE_SIZE/2 - 2, 0, Math.PI * 2);
         ctx.fill();
     }
 }
@@ -221,13 +210,16 @@ function drawPlayer() {
 // Draw ghosts
 function drawGhosts() {
     ghosts.forEach(ghost => {
-        if (ghost.eaten) return; // Don't draw eaten ghosts during respawn
+        if (ghost.eaten) return;
         
-        const x = ghost.x * TILE_SIZE;
-        const y = ghost.y * TILE_SIZE;
+        const x = ghost.pixelX;
+        const y = ghost.pixelY;
         
-        // Ghost body - blue when vulnerable
-        ctx.fillStyle = ghost.vulnerable ? '#3333ff' : ghost.color;
+        // Check if power mode is ending (last 2 seconds)
+        const flashMode = powerMode && (powerModeTimer - Date.now() < 2000);
+        const isFlashing = flashMode && Math.floor(Date.now() / 200) % 2 === 0;
+        
+        ctx.fillStyle = ghost.vulnerable ? (isFlashing ? '#fff' : '#3333ff') : ghost.color;
         ctx.beginPath();
         ctx.arc(x + TILE_SIZE/2, y + TILE_SIZE/2, TILE_SIZE/2 - 2, Math.PI, 0);
         ctx.lineTo(x + TILE_SIZE - 2, y + TILE_SIZE);
@@ -240,7 +232,7 @@ function drawGhosts() {
         ctx.closePath();
         ctx.fill();
         
-        // Eyes - scared look when vulnerable
+        // Eyes
         if (ghost.vulnerable) {
             ctx.fillStyle = '#fff';
             ctx.beginPath();
@@ -257,7 +249,6 @@ function drawGhosts() {
             ctx.fillRect(x + 12, y + 7, 2, 3);
         }
         
-        // Label
         ctx.fillStyle = '#fff';
         ctx.font = 'bold 7px Arial';
         ctx.textAlign = 'center';
@@ -266,75 +257,88 @@ function drawGhosts() {
     });
 }
 
-// Check collision
-function canMove(x, y) {
-    const col = Math.floor(x);
-    const row = Math.floor(y);
-    
-    if (row < 0 || row >= ROWS || col < 0 || col >= COLS) {
-        return false;
-    }
-    
-    return maze[row][col] !== 1;
+// Check if tile is walkable
+function isWalkable(gridX, gridY) {
+    if (gridY < 0 || gridY >= ROWS || gridX < 0 || gridX >= COLS) return false;
+    return maze[gridY][gridX] !== 1;
 }
 
-// Move player
+// Move player with grid-snapping
 function movePlayer() {
-    // Try to change direction
-    let newX = player.x;
-    let newY = player.y;
+    // Try to turn if nextDirection is different
+    let tryGridX = player.gridX;
+    let tryGridY = player.gridY;
     
-    if (player.nextDirection === 'up') newY -= player.speed;
-    else if (player.nextDirection === 'down') newY += player.speed;
-    else if (player.nextDirection === 'left') newX -= player.speed;
-    else if (player.nextDirection === 'right') newX += player.speed;
+    if (player.nextDirection === 'up') tryGridY--;
+    else if (player.nextDirection === 'down') tryGridY++;
+    else if (player.nextDirection === 'left') tryGridX--;
+    else if (player.nextDirection === 'right') tryGridX++;
     
-    if (canMove(newX, newY)) {
+    // If centered on tile and can turn, do it
+    const centerX = player.gridX * TILE_SIZE;
+    const centerY = player.gridY * TILE_SIZE;
+    const isCentered = player.pixelX === centerX && player.pixelY === centerY;
+    
+    if (isCentered && isWalkable(tryGridX, tryGridY)) {
         player.direction = player.nextDirection;
     }
     
     // Move in current direction
-    newX = player.x;
-    newY = player.y;
+    let newPixelX = player.pixelX;
+    let newPixelY = player.pixelY;
     
-    if (player.direction === 'up') newY -= player.speed;
-    else if (player.direction === 'down') newY += player.speed;
-    else if (player.direction === 'left') newX -= player.speed;
-    else if (player.direction === 'right') newX += player.speed;
+    if (player.direction === 'up') newPixelY -= player.speed;
+    else if (player.direction === 'down') newPixelY += player.speed;
+    else if (player.direction === 'left') newPixelX -= player.speed;
+    else if (player.direction === 'right') newPixelX += player.speed;
     
-    if (canMove(newX, newY)) {
-        player.x = newX;
-        player.y = newY;
+    // Check if next grid position is walkable
+    const nextGridX = Math.round(newPixelX / TILE_SIZE);
+    const nextGridY = Math.round(newPixelY / TILE_SIZE);
+    
+    if (isWalkable(nextGridX, nextGridY)) {
+        player.pixelX = newPixelX;
+        player.pixelY = newPixelY;
+        player.gridX = Math.round(player.pixelX / TILE_SIZE);
+        player.gridY = Math.round(player.pixelY / TILE_SIZE);
         
         // Wrap around
-        if (player.x < 0) player.x = COLS - 1;
-        if (player.x >= COLS) player.x = 0;
-        
-        // Check for pellets
-        const col = Math.floor(player.x);
-        const row = Math.floor(player.y);
-        
-        if (maze[row][col] === 2) {
-            maze[row][col] = 0;
-            score += 10;
-            pelletCount--;
-            playNomSound();
-            updateStats();
-        } else if (maze[row][col] === 3) {
-            maze[row][col] = 0;
-            score += 50;
-            pelletCount--;
-            playNomSound();
-            
-            // Activate power mode!
-            powerMode = true;
-            powerModeTimer = Date.now() + POWER_MODE_DURATION;
-            ghosts.forEach(g => g.vulnerable = true);
-            
-            updateStats();
+        if (player.pixelX < -TILE_SIZE/2) {
+            player.pixelX = (COLS - 0.5) * TILE_SIZE;
+            player.gridX = COLS - 1;
+        }
+        if (player.pixelX > (COLS - 0.5) * TILE_SIZE) {
+            player.pixelX = -TILE_SIZE/2;
+            player.gridX = 0;
         }
         
-        // Level complete
+        // Check for pellets when centered on tile
+        if (player.pixelX === player.gridX * TILE_SIZE && player.pixelY === player.gridY * TILE_SIZE) {
+            const cell = maze[player.gridY][player.gridX];
+            
+            if (cell === 2) {
+                maze[player.gridY][player.gridX] = 0;
+                score += 10;
+                pelletCount--;
+                playNomSound();
+                updateStats();
+            } else if (cell === 3) {
+                maze[player.gridY][player.gridX] = 0;
+                score += 50;
+                pelletCount--;
+                playNomSound();
+                
+                // Power mode!
+                powerMode = true;
+                powerModeTimer = Date.now() + POWER_MODE_DURATION;
+                ghosts.forEach(g => {
+                    if (!g.eaten) g.vulnerable = true;
+                });
+                
+                updateStats();
+            }
+        }
+        
         if (pelletCount === 0) {
             level++;
             resetLevel();
@@ -342,109 +346,112 @@ function movePlayer() {
     }
 }
 
-// Ghost AI - chase player or flee when vulnerable
+// Ghost AI with classic Pac-Man behaviors
 function moveGhosts() {
+    const ghostSpeed = 2;
+    
     ghosts.forEach(ghost => {
-        // If eaten, respawn to center
         if (ghost.eaten) {
-            ghost.x = ghost.baseX;
-            ghost.y = ghost.baseY;
+            ghost.pixelX = ghost.baseX * TILE_SIZE;
+            ghost.pixelY = ghost.baseY * TILE_SIZE;
+            ghost.gridX = ghost.baseX;
+            ghost.gridY = ghost.baseY;
             ghost.eaten = false;
             return;
         }
         
-        const speed = ghost.vulnerable ? 0.06 : 0.09;
+        const speed = ghost.vulnerable ? 1.5 : ghostSpeed;
         
-        // Calculate direction to/from player
-        const dx = player.x - ghost.x;
-        const dy = player.y - ghost.y;
-        
-        // Choose direction based on vulnerability
-        let targetDirection;
-        if (ghost.vulnerable) {
-            // Flee from player
-            if (Math.abs(dx) > Math.abs(dy)) {
-                targetDirection = dx > 0 ? 'left' : 'right';
-            } else {
-                targetDirection = dy > 0 ? 'up' : 'down';
-            }
-        } else {
-            // Chase player
-            if (Math.abs(dx) > Math.abs(dy)) {
-                targetDirection = dx > 0 ? 'right' : 'left';
-            } else {
-                targetDirection = dy > 0 ? 'down' : 'up';
-            }
-        }
-        
-        // Try target direction, otherwise pick random valid direction
-        let newX = ghost.x;
-        let newY = ghost.y;
-        
-        if (targetDirection === 'up') newY -= speed;
-        else if (targetDirection === 'down') newY += speed;
-        else if (targetDirection === 'left') newX -= speed;
-        else if (targetDirection === 'right') newX += speed;
-        
-        if (canMove(newX, newY)) {
-            ghost.x = newX;
-            ghost.y = newY;
-            ghost.direction = targetDirection;
-        } else {
-            // Try perpendicular directions
-            const perpDirs = [];
-            if (targetDirection === 'up' || targetDirection === 'down') {
-                perpDirs.push('left', 'right');
-            } else {
-                perpDirs.push('up', 'down');
-            }
+        // When centered on tile, choose direction
+        if (ghost.pixelX === ghost.gridX * TILE_SIZE && ghost.pixelY === ghost.gridY * TILE_SIZE) {
+            let targetX, targetY;
             
-            for (const dir of perpDirs) {
-                newX = ghost.x;
-                newY = ghost.y;
-                
-                if (dir === 'up') newY -= speed;
-                else if (dir === 'down') newY += speed;
-                else if (dir === 'left') newX -= speed;
-                else if (dir === 'right') newX += speed;
-                
-                if (canMove(newX, newY)) {
-                    ghost.x = newX;
-                    ghost.y = newY;
-                    ghost.direction = dir;
-                    break;
+            if (ghost.vulnerable) {
+                // Flee from player
+                targetX = ghost.gridX - (player.gridX - ghost.gridX);
+                targetY = ghost.gridY - (player.gridY - ghost.gridY);
+            } else {
+                // Different AI per personality
+                if (ghost.personality === 'chase') {
+                    targetX = player.gridX;
+                    targetY = player.gridY;
+                } else if (ghost.personality === 'ambush') {
+                    targetX = player.gridX + (player.direction === 'right' ? 4 : player.direction === 'left' ? -4 : 0);
+                    targetY = player.gridY + (player.direction === 'down' ? 4 : player.direction === 'up' ? -4 : 0);
+                } else if (ghost.personality === 'patrol') {
+                    targetX = ghost.gridX < 14 ? 0 : COLS;
+                    targetY = ghost.gridY < 15 ? 0 : ROWS;
+                } else {
+                    targetX = Math.floor(Math.random() * COLS);
+                    targetY = Math.floor(Math.random() * ROWS);
                 }
             }
+            
+            // Find best direction
+            const dirs = ['up', 'down', 'left', 'right'];
+            let bestDir = ghost.direction;
+            let bestDist = 9999;
+            
+            for (const dir of dirs) {
+                let testX = ghost.gridX;
+                let testY = ghost.gridY;
+                
+                if (dir === 'up') testY--;
+                else if (dir === 'down') testY++;
+                else if (dir === 'left') testX--;
+                else if (dir === 'right') testX++;
+                
+                if (isWalkable(testX, testY)) {
+                    const dist = Math.abs(testX - targetX) + Math.abs(testY - targetY);
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        bestDir = dir;
+                    }
+                }
+            }
+            
+            ghost.direction = bestDir;
         }
         
-        // Wrap around
-        if (ghost.x < 0) ghost.x = COLS - 1;
-        if (ghost.x >= COLS) ghost.x = 0;
+        // Move
+        if (ghost.direction === 'up') ghost.pixelY -= speed;
+        else if (ghost.direction === 'down') ghost.pixelY += speed;
+        else if (ghost.direction === 'left') ghost.pixelX -= speed;
+        else if (ghost.direction === 'right') ghost.pixelX += speed;
+        
+        ghost.gridX = Math.round(ghost.pixelX / TILE_SIZE);
+        ghost.gridY = Math.round(ghost.pixelY / TILE_SIZE);
+        
+        // Wrap
+        if (ghost.pixelX < -TILE_SIZE/2) {
+            ghost.pixelX = (COLS - 0.5) * TILE_SIZE;
+            ghost.gridX = COLS - 1;
+        }
+        if (ghost.pixelX > (COLS - 0.5) * TILE_SIZE) {
+            ghost.pixelX = -TILE_SIZE/2;
+            ghost.gridX = 0;
+        }
     });
 }
 
-// Check ghost collision
+// Check collisions
 function checkGhostCollision() {
     ghosts.forEach(ghost => {
         if (ghost.eaten) return;
         
-        const distance = Math.sqrt(
-            Math.pow(player.x - ghost.x, 2) + 
-            Math.pow(player.y - ghost.y, 2)
+        const dist = Math.sqrt(
+            Math.pow(player.gridX - ghost.gridX, 2) + 
+            Math.pow(player.gridY - ghost.gridY, 2)
         );
         
-        if (distance < 0.6) {
+        if (dist < 0.8) {
             if (ghost.vulnerable) {
-                // Eat the ghost!
                 ghost.eaten = true;
                 ghost.vulnerable = false;
                 score += 200;
                 playNomSound();
                 updateStats();
-                
-                // Ghost will respawn in center next frame
             } else {
-                // Ghost caught player
                 lives--;
                 playDeathSound();
                 updateStats();
@@ -461,24 +468,30 @@ function checkGhostCollision() {
 
 // Reset positions
 function resetPositions() {
-    player.x = 13;
-    player.y = 23;
+    player.gridX = 13;
+    player.gridY = 23;
+    player.pixelX = 13 * TILE_SIZE;
+    player.pixelY = 23 * TILE_SIZE;
     player.direction = 'right';
     player.nextDirection = 'right';
     
-    ghosts[0].x = 12; ghosts[0].y = 11;
-    ghosts[1].x = 13; ghosts[1].y = 11;
-    ghosts[2].x = 14; ghosts[2].y = 11;
-    ghosts[3].x = 15; ghosts[3].y = 11;
+    ghosts.forEach((ghost, i) => {
+        ghost.gridX = ghost.baseX;
+        ghost.gridY = ghost.baseY;
+        ghost.pixelX = ghost.baseX * TILE_SIZE;
+        ghost.pixelY = ghost.baseY * TILE_SIZE;
+        ghost.vulnerable = false;
+        ghost.eaten = false;
+    });
+    
+    powerMode = false;
 }
 
 // Reset level
 function resetLevel() {
-    // Restore pellets
     for (let row = 0; row < ROWS; row++) {
         for (let col = 0; col < COLS; col++) {
             if (maze[row][col] === 0) {
-                // Restore pellets in paths
                 if ((row === 1 || row === 29 || col === 1 || col === 26) ||
                     (row >= 5 && row <= 26 && (col === 6 || col === 21))) {
                     maze[row][col] = 2;
@@ -487,7 +500,6 @@ function resetLevel() {
         }
     }
     
-    // Restore power pellets
     maze[3][1] = 3;
     maze[3][26] = 3;
     maze[23][1] = 3;
