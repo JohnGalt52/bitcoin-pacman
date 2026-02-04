@@ -122,6 +122,32 @@ let sirenGain = null;
 let sirenLFO = null;
 let sirenPlaying = false;
 
+// Load "Fuck You Tao" sound effect for eating shitcoin ghosts
+let fuckYouTaoBuffer = null;
+
+fetch('sounds/fuck_you_tao.mp3')
+    .then(response => response.arrayBuffer())
+    .then(arrayBuffer => audioContext.decodeAudioData(arrayBuffer))
+    .then(decodedBuffer => {
+        fuckYouTaoBuffer = decodedBuffer;
+        console.log('🎵 "Fuck you Tao" sound loaded!');
+    })
+    .catch(err => console.warn('Could not load fuck_you_tao.mp3:', err));
+
+function playFuckYouTao() {
+    if (!fuckYouTaoBuffer) return;
+    
+    const source = audioContext.createBufferSource();
+    const gainNode = audioContext.createGain();
+    
+    source.buffer = fuckYouTaoBuffer;
+    source.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    gainNode.gain.value = 0.8; // Loud and proud
+    
+    source.start(0);
+}
+
 // Start background siren (classic Pac-Man ambience)
 function startSiren() {
     if (sirenPlaying) return;
@@ -659,7 +685,8 @@ function checkGhostCollision() {
                 const points = 200 * Math.pow(2, ghostEatCombo - 1);
                 score += points;
                 
-                playGhostEatenSound();
+                // Play "Fuck you Tao!" when eating shitcoin ghosts
+                playFuckYouTao();
                 updateStats();
                 
                 // Show points briefly
