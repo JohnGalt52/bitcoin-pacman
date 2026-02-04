@@ -13,6 +13,9 @@ let lives = 3;
 let level = 1;
 let gameRunning = true;
 let pelletCount = 0;
+let powerMode = false;
+let powerModeTimer = 0;
+const POWER_MODE_DURATION = 5000; // 5 seconds
 
 // Player
 const player = {
@@ -20,7 +23,7 @@ const player = {
     y: 23,
     direction: 'right',
     nextDirection: 'right',
-    speed: 0.15,
+    speed: 0.18,
     image: null,
     imageLoaded: false
 };
@@ -30,14 +33,44 @@ const playerImg = new Image();
 playerImg.src = 'pacman.jpg';
 playerImg.onload = () => {
     player.imageLoaded = true;
+    // Remove white background by creating a canvas with transparency
+    const tempCanvas = document.createElement('canvas');
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCanvas.width = playerImg.width;
+    tempCanvas.height = playerImg.height;
+    
+    tempCtx.drawImage(playerImg, 0, 0);
+    const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+    const data = imageData.data;
+    
+    // Remove white/light backgrounds
+    for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        
+        // If pixel is mostly white/light, make it transparent
+        if (r > 200 && g > 200 && b > 200) {
+            data[i + 3] = 0; // Set alpha to 0
+        }
+    }
+    
+    tempCtx.putImageData(imageData, 0, 0);
+    
+    // Create new image from cleaned canvas
+    const cleanImg = new Image();
+    cleanImg.src = tempCanvas.toDataURL();
+    cleanImg.onload = () => {
+        playerImg.src = cleanImg.src;
+    };
 };
 
 // Shitcoin ghosts
 const ghosts = [
-    { name: 'SOL', color: '#14F195', x: 12, y: 11, direction: 'up', targetX: 0, targetY: 0 },
-    { name: 'ETH', color: '#627EEA', x: 13, y: 11, direction: 'up', targetX: 0, targetY: 0 },
-    { name: 'ADA', color: '#0033AD', x: 14, y: 11, direction: 'up', targetX: 0, targetY: 0 },
-    { name: 'XRP', color: '#23292F', x: 15, y: 11, direction: 'up', targetX: 0, targetY: 0 }
+    { name: 'SOL', color: '#14F195', x: 12, y: 11, direction: 'up', targetX: 0, targetY: 0, vulnerable: false, eaten: false, baseX: 12, baseY: 11 },
+    { name: 'ETH', color: '#627EEA', x: 13, y: 11, direction: 'up', targetX: 0, targetY: 0, vulnerable: false, eaten: false, baseX: 13, baseY: 11 },
+    { name: 'ADA', color: '#0033AD', x: 14, y: 11, direction: 'up', targetX: 0, targetY: 0, vulnerable: false, eaten: false, baseX: 14, baseY: 11 },
+    { name: 'XRP', color: '#23292F', x: 15, y: 11, direction: 'up', targetX: 0, targetY: 0, vulnerable: false, eaten: false, baseX: 15, baseY: 11 }
 ];
 
 // Maze layout (0 = path, 1 = wall, 2 = pellet, 3 = power pellet)
@@ -188,11 +221,13 @@ function drawPlayer() {
 // Draw ghosts
 function drawGhosts() {
     ghosts.forEach(ghost => {
+        if (ghost.eaten) return; // Don't draw eaten ghosts during respawn
+        
         const x = ghost.x * TILE_SIZE;
         const y = ghost.y * TILE_SIZE;
         
-        // Ghost body
-        ctx.fillStyle = ghost.color;
+        // Ghost body - blue when vulnerable
+        ctx.fillStyle = ghost.vulnerable ? '#3333ff' : ghost.color;
         ctx.beginPath();
         ctx.arc(x + TILE_SIZE/2, y + TILE_SIZE/2, TILE_SIZE/2 - 2, Math.PI, 0);
         ctx.lineTo(x + TILE_SIZE - 2, y + TILE_SIZE);
@@ -205,14 +240,22 @@ function drawGhosts() {
         ctx.closePath();
         ctx.fill();
         
-        // Eyes
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(x + 5, y + 6, 4, 5);
-        ctx.fillRect(x + 11, y + 6, 4, 5);
-        
-        ctx.fillStyle = '#000';
-        ctx.fillRect(x + 6, y + 7, 2, 3);
-        ctx.fillRect(x + 12, y + 7, 2, 3);
+        // Eyes - scared look when vulnerable
+        if (ghost.vulnerable) {
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(x + 7, y + 9, 2, 0, Math.PI * 2);
+            ctx.arc(x + 13, y + 9, 2, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(x + 5, y + 6, 4, 5);
+            ctx.fillRect(x + 11, y + 6, 4, 5);
+            
+            ctx.fillStyle = '#000';
+            ctx.fillRect(x + 6, y + 7, 2, 3);
+            ctx.fillRect(x + 12, y + 7, 2, 3);
+        }
         
         // Label
         ctx.fillStyle = '#fff';
@@ -282,6 +325,12 @@ function movePlayer() {
             score += 50;
             pelletCount--;
             playNomSound();
+            
+            // Activate power mode!
+            powerMode = true;
+            powerModeTimer = Date.now() + POWER_MODE_DURATION;
+            ghosts.forEach(g => g.vulnerable = true);
+            
             updateStats();
         }
         
@@ -293,31 +342,79 @@ function movePlayer() {
     }
 }
 
-// Simple ghost AI
+// Ghost AI - chase player or flee when vulnerable
 function moveGhosts() {
     ghosts.forEach(ghost => {
-        // Random direction change occasionally
-        if (Math.random() < 0.02) {
-            const directions = ['up', 'down', 'left', 'right'];
-            ghost.direction = directions[Math.floor(Math.random() * directions.length)];
+        // If eaten, respawn to center
+        if (ghost.eaten) {
+            ghost.x = ghost.baseX;
+            ghost.y = ghost.baseY;
+            ghost.eaten = false;
+            return;
         }
         
+        const speed = ghost.vulnerable ? 0.06 : 0.09;
+        
+        // Calculate direction to/from player
+        const dx = player.x - ghost.x;
+        const dy = player.y - ghost.y;
+        
+        // Choose direction based on vulnerability
+        let targetDirection;
+        if (ghost.vulnerable) {
+            // Flee from player
+            if (Math.abs(dx) > Math.abs(dy)) {
+                targetDirection = dx > 0 ? 'left' : 'right';
+            } else {
+                targetDirection = dy > 0 ? 'up' : 'down';
+            }
+        } else {
+            // Chase player
+            if (Math.abs(dx) > Math.abs(dy)) {
+                targetDirection = dx > 0 ? 'right' : 'left';
+            } else {
+                targetDirection = dy > 0 ? 'down' : 'up';
+            }
+        }
+        
+        // Try target direction, otherwise pick random valid direction
         let newX = ghost.x;
         let newY = ghost.y;
-        const speed = 0.08;
         
-        if (ghost.direction === 'up') newY -= speed;
-        else if (ghost.direction === 'down') newY += speed;
-        else if (ghost.direction === 'left') newX -= speed;
-        else if (ghost.direction === 'right') newX += speed;
+        if (targetDirection === 'up') newY -= speed;
+        else if (targetDirection === 'down') newY += speed;
+        else if (targetDirection === 'left') newX -= speed;
+        else if (targetDirection === 'right') newX += speed;
         
         if (canMove(newX, newY)) {
             ghost.x = newX;
             ghost.y = newY;
+            ghost.direction = targetDirection;
         } else {
-            // Change direction if hit wall
-            const directions = ['up', 'down', 'left', 'right'];
-            ghost.direction = directions[Math.floor(Math.random() * directions.length)];
+            // Try perpendicular directions
+            const perpDirs = [];
+            if (targetDirection === 'up' || targetDirection === 'down') {
+                perpDirs.push('left', 'right');
+            } else {
+                perpDirs.push('up', 'down');
+            }
+            
+            for (const dir of perpDirs) {
+                newX = ghost.x;
+                newY = ghost.y;
+                
+                if (dir === 'up') newY -= speed;
+                else if (dir === 'down') newY += speed;
+                else if (dir === 'left') newX -= speed;
+                else if (dir === 'right') newX += speed;
+                
+                if (canMove(newX, newY)) {
+                    ghost.x = newX;
+                    ghost.y = newY;
+                    ghost.direction = dir;
+                    break;
+                }
+            }
         }
         
         // Wrap around
@@ -329,20 +426,34 @@ function moveGhosts() {
 // Check ghost collision
 function checkGhostCollision() {
     ghosts.forEach(ghost => {
+        if (ghost.eaten) return;
+        
         const distance = Math.sqrt(
             Math.pow(player.x - ghost.x, 2) + 
             Math.pow(player.y - ghost.y, 2)
         );
         
         if (distance < 0.6) {
-            lives--;
-            playDeathSound();
-            updateStats();
-            
-            if (lives <= 0) {
-                gameOver();
+            if (ghost.vulnerable) {
+                // Eat the ghost!
+                ghost.eaten = true;
+                ghost.vulnerable = false;
+                score += 200;
+                playNomSound();
+                updateStats();
+                
+                // Ghost will respawn in center next frame
             } else {
-                resetPositions();
+                // Ghost caught player
+                lives--;
+                playDeathSound();
+                updateStats();
+                
+                if (lives <= 0) {
+                    gameOver();
+                } else {
+                    resetPositions();
+                }
             }
         }
     });
@@ -423,6 +534,12 @@ document.addEventListener('keydown', (e) => {
 // Game loop
 function gameLoop() {
     if (!gameRunning) return;
+    
+    // Check power mode timer
+    if (powerMode && Date.now() >= powerModeTimer) {
+        powerMode = false;
+        ghosts.forEach(g => g.vulnerable = false);
+    }
     
     drawMaze();
     drawPlayer();
