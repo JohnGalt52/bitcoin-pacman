@@ -102,12 +102,12 @@ function drawPacmanImage(x, y, size, direction) {
     ctx.restore();
 }
 
-// Shitcoin ghosts with real logo rendering - start outside ghost house
+// Shitcoin ghosts - start in corners where they can definitely move
 const ghosts = [
-    { name: 'SOL', color: '#14F195', gradient: ['#14F195', '#9945FF'], gridX: 13, gridY: 11, pixelX: 13*TILE_SIZE, pixelY: 11*TILE_SIZE, direction: 'left', personality: 'chase', vulnerable: false, eaten: false, baseX: 13, baseY: 14 },
-    { name: 'ETH', color: '#627EEA', gradient: ['#627EEA', '#8A9EFF'], gridX: 14, gridY: 11, pixelX: 14*TILE_SIZE, pixelY: 11*TILE_SIZE, direction: 'right', personality: 'ambush', vulnerable: false, eaten: false, baseX: 14, baseY: 14 },
-    { name: 'ADA', color: '#0033AD', gradient: ['#0033AD', '#0052FF'], gridX: 12, gridY: 11, pixelX: 12*TILE_SIZE, pixelY: 11*TILE_SIZE, direction: 'left', personality: 'patrol', vulnerable: false, eaten: false, baseX: 13, baseY: 14 },
-    { name: 'XRP', color: '#23292F', gradient: ['#23292F', '#555'], gridX: 15, gridY: 11, pixelX: 15*TILE_SIZE, pixelY: 11*TILE_SIZE, direction: 'right', personality: 'random', vulnerable: false, eaten: false, baseX: 14, baseY: 14 }
+    { name: 'SOL', color: '#14F195', gradient: ['#14F195', '#9945FF'], gridX: 1, gridY: 1, pixelX: 1*TILE_SIZE, pixelY: 1*TILE_SIZE, direction: 'right', personality: 'chase', vulnerable: false, eaten: false, baseX: 13, baseY: 14 },
+    { name: 'ETH', color: '#627EEA', gradient: ['#627EEA', '#8A9EFF'], gridX: 26, gridY: 1, pixelX: 26*TILE_SIZE, pixelY: 1*TILE_SIZE, direction: 'left', personality: 'ambush', vulnerable: false, eaten: false, baseX: 14, baseY: 14 },
+    { name: 'ADA', color: '#0033AD', gradient: ['#0033AD', '#0052FF'], gridX: 1, gridY: 29, pixelX: 1*TILE_SIZE, pixelY: 29*TILE_SIZE, direction: 'right', personality: 'patrol', vulnerable: false, eaten: false, baseX: 13, baseY: 14 },
+    { name: 'XRP', color: '#23292F', gradient: ['#23292F', '#555'], gridX: 26, gridY: 29, pixelX: 26*TILE_SIZE, pixelY: 29*TILE_SIZE, direction: 'left', personality: 'random', vulnerable: false, eaten: false, baseX: 14, baseY: 14 }
 ];
 
 // Maze layout (0 = path, 1 = wall, 2 = pellet, 3 = power pellet)
@@ -503,109 +503,92 @@ function isWalkable(gridX, gridY) {
     return maze[gridY][gridX] !== 1;
 }
 
-// Move player
+// Move player - simplified grid-based movement
 function movePlayer() {
-    let tryGridX = player.gridX;
-    let tryGridY = player.gridY;
-    
-    if (player.nextDirection === 'up') tryGridY--;
-    else if (player.nextDirection === 'down') tryGridY++;
-    else if (player.nextDirection === 'left') tryGridX--;
-    else if (player.nextDirection === 'right') tryGridX++;
-    
     const centerX = player.gridX * TILE_SIZE;
     const centerY = player.gridY * TILE_SIZE;
-    const isCentered = Math.abs(player.pixelX - centerX) < player.speed && Math.abs(player.pixelY - centerY) < player.speed;
     
-    // Try to change direction when centered on a tile
-    if (isCentered && isWalkable(tryGridX, tryGridY)) {
-        player.direction = player.nextDirection;
-        // Snap to grid center to prevent drift
+    // Calculate distance to tile center
+    const distToCenter = Math.abs(player.pixelX - centerX) + Math.abs(player.pixelY - centerY);
+    
+    // At tile center - can change direction
+    if (distToCenter < player.speed) {
+        // Snap to center
         player.pixelX = centerX;
         player.pixelY = centerY;
+        
+        // Try requested direction first
+        let tryX = player.gridX;
+        let tryY = player.gridY;
+        if (player.nextDirection === 'up') tryY--;
+        else if (player.nextDirection === 'down') tryY++;
+        else if (player.nextDirection === 'left') tryX--;
+        else if (player.nextDirection === 'right') tryX++;
+        
+        if (isWalkable(tryX, tryY)) {
+            player.direction = player.nextDirection;
+        }
+        
+        // Check if current direction is blocked
+        let currX = player.gridX;
+        let currY = player.gridY;
+        if (player.direction === 'up') currY--;
+        else if (player.direction === 'down') currY++;
+        else if (player.direction === 'left') currX--;
+        else if (player.direction === 'right') currX++;
+        
+        if (!isWalkable(currX, currY)) {
+            // Stop - can't move in current direction
+            return;
+        }
     }
     
-    // Calculate new position
-    let newPixelX = player.pixelX;
-    let newPixelY = player.pixelY;
+    // Move in current direction
+    if (player.direction === 'up') player.pixelY -= player.speed;
+    else if (player.direction === 'down') player.pixelY += player.speed;
+    else if (player.direction === 'left') player.pixelX -= player.speed;
+    else if (player.direction === 'right') player.pixelX += player.speed;
     
-    if (player.direction === 'up') newPixelY -= player.speed;
-    else if (player.direction === 'down') newPixelY += player.speed;
-    else if (player.direction === 'left') newPixelX -= player.speed;
-    else if (player.direction === 'right') newPixelX += player.speed;
+    // Update grid position
+    player.gridX = Math.round(player.pixelX / TILE_SIZE);
+    player.gridY = Math.round(player.pixelY / TILE_SIZE);
     
-    // Check collision at the leading edge of movement
-    let canMove = true;
-    const margin = 2; // Small margin to prevent wall sticking
-    
-    if (player.direction === 'up') {
-        const checkY = Math.floor((newPixelY + margin) / TILE_SIZE);
-        const checkX = Math.floor((player.pixelX + TILE_SIZE/2) / TILE_SIZE);
-        canMove = isWalkable(checkX, checkY);
-    } else if (player.direction === 'down') {
-        const checkY = Math.floor((newPixelY + TILE_SIZE - margin) / TILE_SIZE);
-        const checkX = Math.floor((player.pixelX + TILE_SIZE/2) / TILE_SIZE);
-        canMove = isWalkable(checkX, checkY);
-    } else if (player.direction === 'left') {
-        const checkX = Math.floor((newPixelX + margin) / TILE_SIZE);
-        const checkY = Math.floor((player.pixelY + TILE_SIZE/2) / TILE_SIZE);
-        canMove = isWalkable(checkX, checkY);
-    } else if (player.direction === 'right') {
-        const checkX = Math.floor((newPixelX + TILE_SIZE - margin) / TILE_SIZE);
-        const checkY = Math.floor((player.pixelY + TILE_SIZE/2) / TILE_SIZE);
-        canMove = isWalkable(checkX, checkY);
+    // Tunnel wrap
+    if (player.pixelX < -TILE_SIZE/2) {
+        player.pixelX = (COLS - 1) * TILE_SIZE;
+        player.gridX = COLS - 1;
+    }
+    if (player.pixelX > (COLS - 0.5) * TILE_SIZE) {
+        player.pixelX = 0;
+        player.gridX = 0;
     }
     
-    if (canMove) {
-        player.pixelX = newPixelX;
-        player.pixelY = newPixelY;
-        player.gridX = Math.floor((player.pixelX + TILE_SIZE/2) / TILE_SIZE);
-        player.gridY = Math.floor((player.pixelY + TILE_SIZE/2) / TILE_SIZE);
+    // Check pellets when near tile center
+    const cell = maze[player.gridY]?.[player.gridX];
+    
+    if (cell === 2) {
+        maze[player.gridY][player.gridX] = 0;
+        score += 10;
+        pelletCount--;
+        playNomSound();
+        updateStats();
+    } else if (cell === 3) {
+        maze[player.gridY][player.gridX] = 0;
+        score += 50;
+        pelletCount--;
+        playPowerPelletSound();
         
-        // Wrap around tunnel
-        if (player.pixelX < -TILE_SIZE) {
-            player.pixelX = COLS * TILE_SIZE;
-            player.gridX = COLS - 1;
-        }
-        if (player.pixelX > COLS * TILE_SIZE) {
-            player.pixelX = -TILE_SIZE;
-            player.gridX = 0;
-        }
-        
-        // Check pellets with better alignment
-        if (Math.abs(player.pixelX - player.gridX * TILE_SIZE) < 3 && 
-            Math.abs(player.pixelY - player.gridY * TILE_SIZE) < 3) {
-            const cell = maze[player.gridY]?.[player.gridX];
-            
-            if (cell === 2) {
-                maze[player.gridY][player.gridX] = 0;
-                score += 10;
-                pelletCount--;
-                playNomSound();
-                updateStats();
-            } else if (cell === 3) {
-                maze[player.gridY][player.gridX] = 0;
-                score += 50;
-                pelletCount--;
-                playPowerPelletSound();
-                
-                // Power mode!
-                powerMode = true;
-                powerModeTimer = Date.now() + POWER_MODE_DURATION;
-                ghostEatCombo = 0;
-                ghosts.forEach(g => {
-                    if (!g.eaten) g.vulnerable = true;
-                });
-                
-                updateSirenForPowerMode();
-                updateStats();
-            }
-        }
-        
-        if (pelletCount === 0) {
-            level++;
-            resetLevel();
-        }
+        // Power mode!
+        powerMode = true;
+        powerModeTimer = Date.now() + POWER_MODE_DURATION;
+        ghostEatCombo = 0;
+        ghosts.forEach(g => {
+            if (!g.eaten) g.vulnerable = true;
+        });
+    
+    if (pelletCount === 0) {
+        level++;
+        resetLevel();
     }
 }
 
