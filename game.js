@@ -707,8 +707,8 @@ function movePlayer() {
         updateSirenForPowerMode();
     }
     
-    // Level complete triggers celebration
-    if (pelletCount === 0) {
+    // Level complete triggers celebration (only if not already celebrating)
+    if (pelletCount === 0 && !celebrationActive && !countdownActive) {
         startLevelCelebration();
     }
 }
@@ -1137,20 +1137,39 @@ function drawCountdown() {
     if (elapsed >= COUNTDOWN_DURATION) {
         countdownActive = false;
         
-        // CRITICAL: Ensure all game state is properly reset for the new level
+        // CRITICAL: Ensure ALL game state is properly reset for the new level
         gamePaused = false;
         gameRunning = true;
+        celebrationActive = false;
         
-        // Reset player direction to ensure movement works
+        // Force player to exact grid position with clean direction
+        player.gridX = 13;
+        player.gridY = 23;
+        player.pixelX = 13 * TILE_SIZE;
+        player.pixelY = 23 * TILE_SIZE;
         player.direction = 'right';
         player.nextDirection = 'right';
+        
+        // Reset power mode state
+        powerMode = false;
+        powerModeTimer = 0;
+        ghostEatCombo = 0;
+        invulnerable = false;
+        invulnerableTimer = 0;
         
         // Reset gameStartTime for ghost spawn timers
         gameStartTime = Date.now();
         
+        // Re-set ghost visibility based on new gameStartTime
+        ghosts.forEach((ghost, i) => {
+            ghost.spawnDelay = i * 3000;
+            ghost.visible = (i === 0);
+        });
+        
         startSiren();
         
-        console.log(`🎮 Level ${level} - GAME ON!`);
+        console.log(`🎮 Level ${level} - GAME ON! gamePaused=${gamePaused} gameRunning=${gameRunning}`);
+        console.log(`🎮 Player at (${player.gridX},${player.gridY}) dir=${player.direction} pellets=${pelletCount}`);
         console.log(`🎨 Wall color: ${currentWallColors.main}`);
     }
 }
@@ -1299,6 +1318,12 @@ function gameLoop() {
         drawCountdown();
         requestAnimationFrame(gameLoop);
         return;
+    }
+    
+    // Safety check: if not in celebration or countdown, game should NOT be paused
+    if (!celebrationActive && !countdownActive && gamePaused) {
+        console.warn('⚠️ Game was paused with no celebration/countdown active! Force-unpausing.');
+        gamePaused = false;
     }
     
     // Normal gameplay (not paused)
