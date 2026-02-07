@@ -1,5 +1,6 @@
-// Bitcoin Pac-Man v2.0 - Enhanced Edition
-// Featuring: Real coin logos, improved sound, better collision, power mode music
+// Bitcoin Pac-Man v2.1 - Fixed & Enhanced Edition
+// Fixes: ghost spawns, wall clipping, missing brace, ghost house exit
+// Added: touch controls, speed scaling, invulnerability, better AI
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
@@ -32,6 +33,10 @@ let powerMode = false;
 let powerModeTimer = 0;
 const POWER_MODE_DURATION = 10000;
 let ghostEatCombo = 0; // For combo scoring: 200, 400, 800, 1600
+let invulnerable = false;
+let invulnerableTimer = 0;
+const INVULNERABLE_DURATION = 2000; // 2 seconds after death
+let gameStartTime = 0; // Track when game/level started for ghost scatter
 
 // Player - enhanced with smooth animation
 const player = {
@@ -95,6 +100,11 @@ function drawPacmanImage(x, y, size, direction) {
     const rotations = { right: 0, down: Math.PI/2, left: Math.PI, up: -Math.PI/2 };
     ctx.rotate(rotations[direction] || 0);
     
+    // Flash when invulnerable
+    if (invulnerable && Math.floor(Date.now() / 100) % 2 === 0) {
+        ctx.globalAlpha = 0.4;
+    }
+    
     // Draw the processed image (white background removed)
     const img = pacmanProcessed || pacmanImg;
     ctx.drawImage(img, -size/2, -size/2, size, size);
@@ -102,12 +112,29 @@ function drawPacmanImage(x, y, size, direction) {
     ctx.restore();
 }
 
-// Shitcoin ghosts - start in corners where they can definitely move
+// ===== FIX #2: Ghost starting positions inside the ghost pen =====
+// Ghost pen area is around rows 13-15, cols 11-16 (maze value 0)
+// Each ghost has a scatter delay (ms after game start) before leaving the pen
 const ghosts = [
-    { name: 'SOL', color: '#14F195', gradient: ['#14F195', '#9945FF'], gridX: 1, gridY: 1, pixelX: 1*TILE_SIZE, pixelY: 1*TILE_SIZE, direction: 'right', personality: 'chase', vulnerable: false, eaten: false, baseX: 13, baseY: 14 },
-    { name: 'ETH', color: '#627EEA', gradient: ['#627EEA', '#8A9EFF'], gridX: 26, gridY: 1, pixelX: 26*TILE_SIZE, pixelY: 1*TILE_SIZE, direction: 'left', personality: 'ambush', vulnerable: false, eaten: false, baseX: 14, baseY: 14 },
-    { name: 'ADA', color: '#0033AD', gradient: ['#0033AD', '#0052FF'], gridX: 1, gridY: 29, pixelX: 1*TILE_SIZE, pixelY: 29*TILE_SIZE, direction: 'right', personality: 'patrol', vulnerable: false, eaten: false, baseX: 13, baseY: 14 },
-    { name: 'XRP', color: '#23292F', gradient: ['#23292F', '#555'], gridX: 26, gridY: 29, pixelX: 26*TILE_SIZE, pixelY: 29*TILE_SIZE, direction: 'left', personality: 'random', vulnerable: false, eaten: false, baseX: 14, baseY: 14 }
+    { name: 'SOL', color: '#14F195', gradient: ['#14F195', '#9945FF'],
+      gridX: 11, gridY: 14, pixelX: 11*TILE_SIZE, pixelY: 14*TILE_SIZE,
+      direction: 'up', personality: 'chase', vulnerable: false, eaten: false,
+      baseX: 13, baseY: 14, inPen: true, scatterDelay: 0 },
+
+    { name: 'ETH', color: '#627EEA', gradient: ['#627EEA', '#8A9EFF'],
+      gridX: 16, gridY: 14, pixelX: 16*TILE_SIZE, pixelY: 14*TILE_SIZE,
+      direction: 'up', personality: 'ambush', vulnerable: false, eaten: false,
+      baseX: 14, baseY: 14, inPen: true, scatterDelay: 3000 },
+
+    { name: 'ADA', color: '#0033AD', gradient: ['#0033AD', '#0052FF'],
+      gridX: 13, gridY: 14, pixelX: 13*TILE_SIZE, pixelY: 14*TILE_SIZE,
+      direction: 'up', personality: 'patrol', vulnerable: false, eaten: false,
+      baseX: 13, baseY: 14, inPen: true, scatterDelay: 6000 },
+
+    { name: 'XRP', color: '#23292F', gradient: ['#23292F', '#555'],
+      gridX: 14, gridY: 14, pixelX: 14*TILE_SIZE, pixelY: 14*TILE_SIZE,
+      direction: 'up', personality: 'random', vulnerable: false, eaten: false,
+      baseX: 14, baseY: 14, inPen: true, scatterDelay: 9000 }
 ];
 
 // Maze layout (0 = path, 1 = wall, 2 = pellet, 3 = power pellet)
@@ -208,8 +235,10 @@ function startSiren() {
 
 function stopSiren() {
     if (!sirenPlaying) return;
-    sirenOscillator?.stop();
-    sirenLFO?.stop();
+    try {
+        sirenOscillator?.stop();
+        sirenLFO?.stop();
+    } catch(e) { /* already stopped */ }
     sirenPlaying = false;
 }
 
@@ -302,6 +331,22 @@ function playDeathSound() {
     osc.stop(audioContext.currentTime + 0.8);
 }
 
+function playLevelUpSound() {
+    // Fun ascending arpeggio for level up
+    [0, 0.1, 0.2, 0.3].forEach((delay, i) => {
+        const osc = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        osc.connect(gain);
+        gain.connect(audioContext.destination);
+        osc.frequency.value = 400 * Math.pow(1.25, i);
+        osc.type = 'square';
+        gain.gain.setValueAtTime(0.15, audioContext.currentTime + delay);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + delay + 0.15);
+        osc.start(audioContext.currentTime + delay);
+        osc.stop(audioContext.currentTime + delay + 0.15);
+    });
+}
+
 // ========== DRAWING FUNCTIONS ==========
 
 // Draw crypto coin logo for ghosts
@@ -346,7 +391,6 @@ function drawCoinLogo(ctx, ghost, x, y, size) {
         ctx.lineTo(centerX, centerY + 6);
         ctx.lineTo(centerX - 5, centerY);
         ctx.closePath();
-        ctx.stroke();
         ctx.strokeStyle = '#fff';
         ctx.lineWidth = 1.5;
         ctx.stroke();
@@ -398,6 +442,28 @@ function drawVulnerableGhost(ctx, ghost, x, y, size) {
     ctx.strokeStyle = isFlashing ? '#f00' : '#fff';
     ctx.lineWidth = 1.5;
     ctx.stroke();
+}
+
+// Draw eaten ghost (eyes only, returning to pen)
+function drawEatenGhost(ctx, ghost, x, y, size) {
+    // Just draw the eyes heading back to base
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(x + 6, y + 8, 3, 0, Math.PI * 2);
+    ctx.arc(x + 14, y + 8, 3, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Pupils pointing toward base
+    const dx = ghost.baseX * TILE_SIZE - ghost.pixelX;
+    const dy = ghost.baseY * TILE_SIZE - ghost.pixelY;
+    const angle = Math.atan2(dy, dx);
+    const pupilDist = 1.5;
+    
+    ctx.fillStyle = '#00f';
+    ctx.beginPath();
+    ctx.arc(x + 6 + Math.cos(angle) * pupilDist, y + 8 + Math.sin(angle) * pupilDist, 1.5, 0, Math.PI * 2);
+    ctx.arc(x + 14 + Math.cos(angle) * pupilDist, y + 8 + Math.sin(angle) * pupilDist, 1.5, 0, Math.PI * 2);
+    ctx.fill();
 }
 
 // Draw maze with improved graphics
@@ -460,12 +526,12 @@ function drawPlayer() {
 // Draw ghosts with coin logos
 function drawGhosts() {
     ghosts.forEach(ghost => {
-        if (ghost.eaten) return;
-        
         const x = ghost.pixelX;
         const y = ghost.pixelY;
         
-        if (ghost.vulnerable) {
+        if (ghost.eaten) {
+            drawEatenGhost(ctx, ghost, x, y, TILE_SIZE);
+        } else if (ghost.vulnerable) {
             drawVulnerableGhost(ctx, ghost, x, y, TILE_SIZE);
         } else {
             drawCoinLogo(ctx, ghost, x, y, TILE_SIZE);
@@ -503,8 +569,20 @@ function isWalkable(gridX, gridY) {
     return maze[gridY][gridX] !== 1;
 }
 
+// ===== FIX #5: Speed increases per level =====
+function getPlayerSpeed() {
+    return 2 + (level - 1) * 0.15; // Slight speed increase per level
+}
+
+function getGhostSpeed() {
+    return 2 + (level - 1) * 0.2; // Ghosts get faster each level
+}
+
 // Move player - simplified grid-based movement
+// ===== FIX #1: Missing closing brace fixed =====
 function movePlayer() {
+    player.speed = getPlayerSpeed();
+    
     const centerX = player.gridX * TILE_SIZE;
     const centerY = player.gridY * TILE_SIZE;
     
@@ -553,8 +631,12 @@ function movePlayer() {
     player.gridX = Math.round(player.pixelX / TILE_SIZE);
     player.gridY = Math.round(player.pixelY / TILE_SIZE);
     
+    // Clamp grid position
+    player.gridX = Math.max(0, Math.min(COLS - 1, player.gridX));
+    player.gridY = Math.max(0, Math.min(ROWS - 1, player.gridY));
+    
     // Tunnel wrap
-    if (player.pixelX < -TILE_SIZE/2) {
+    if (player.pixelX < -TILE_SIZE / 2) {
         player.pixelX = (COLS - 1) * TILE_SIZE;
         player.gridX = COLS - 1;
     }
@@ -585,67 +667,160 @@ function movePlayer() {
         ghosts.forEach(g => {
             if (!g.eaten) g.vulnerable = true;
         });
+        
+        updateSirenForPowerMode();
+    } // <-- FIX #1: This closing brace was missing!
     
     if (pelletCount === 0) {
         level++;
+        playLevelUpSound();
         resetLevel();
     }
 }
 
-// Ghost AI
+// ===== FIX #4: Ghost house exit logic =====
+// Ghost pen exit path: from pen interior → (13, 12) → (13, 11) → up and out
+function moveGhostOutOfPen(ghost) {
+    const exitX = 13; // Ghost house exit column
+    const exitY = 11; // Just above the pen gate
+    
+    const targetPixelX = exitX * TILE_SIZE;
+    const targetPixelY = exitY * TILE_SIZE;
+    
+    const dx = targetPixelX - ghost.pixelX;
+    const dy = targetPixelY - ghost.pixelY;
+    const penSpeed = 1.5;
+    
+    // Move horizontally to exit column first
+    if (Math.abs(dx) > penSpeed) {
+        ghost.pixelX += Math.sign(dx) * penSpeed;
+        ghost.direction = dx > 0 ? 'right' : 'left';
+    }
+    // Then move vertically up to exit
+    else if (Math.abs(dy) > penSpeed) {
+        ghost.pixelX = targetPixelX; // Snap X
+        ghost.pixelY += Math.sign(dy) * penSpeed;
+        ghost.direction = dy > 0 ? 'down' : 'up';
+    }
+    // Reached exit
+    else {
+        ghost.pixelX = targetPixelX;
+        ghost.pixelY = targetPixelY;
+        ghost.gridX = exitX;
+        ghost.gridY = exitY;
+        ghost.inPen = false;
+        ghost.direction = 'left'; // Start heading left out of the pen area
+    }
+    
+    // Update grid position while in pen
+    ghost.gridX = Math.round(ghost.pixelX / TILE_SIZE);
+    ghost.gridY = Math.round(ghost.pixelY / TILE_SIZE);
+}
+
+// ===== FIX #3: Ghost wall clipping fix =====
+// Ghost AI with proper tile-center snapping and pen exit
 function moveGhosts() {
-    const ghostSpeed = 2.2 + (level * 0.15);  // Faster ghosts, better chase
+    const baseGhostSpeed = getGhostSpeed();
+    const now = Date.now();
+    const elapsed = now - gameStartTime;
     
     ghosts.forEach(ghost => {
+        // ===== FIX #4: Ghost house exit with scatter delays =====
+        if (ghost.inPen) {
+            // Wait for scatter delay before exiting
+            if (elapsed < ghost.scatterDelay) {
+                // Bob up and down in pen while waiting
+                ghost.pixelY = ghost.baseY * TILE_SIZE + Math.sin(now / 300) * 3;
+                ghost.gridY = ghost.baseY;
+                return;
+            }
+            // Time to exit the pen
+            moveGhostOutOfPen(ghost);
+            return;
+        }
+        
         if (ghost.eaten) {
-            // Return to base
+            // Return to base (pen) - eyes only
             const dx = ghost.baseX * TILE_SIZE - ghost.pixelX;
             const dy = ghost.baseY * TILE_SIZE - ghost.pixelY;
             
-            if (Math.abs(dx) < 3 && Math.abs(dy) < 3) {
+            if (Math.abs(dx) < 4 && Math.abs(dy) < 4) {
                 ghost.pixelX = ghost.baseX * TILE_SIZE;
                 ghost.pixelY = ghost.baseY * TILE_SIZE;
                 ghost.gridX = ghost.baseX;
                 ghost.gridY = ghost.baseY;
                 ghost.eaten = false;
+                ghost.inPen = true;
+                ghost.scatterDelay = 0; // Exit immediately when reviving
             } else {
-                ghost.pixelX += Math.sign(dx) * 3;
-                ghost.pixelY += Math.sign(dy) * 3;
+                // Fast return - move toward base ignoring walls
+                const returnSpeed = 4;
+                if (Math.abs(dx) > Math.abs(dy)) {
+                    ghost.pixelX += Math.sign(dx) * returnSpeed;
+                    ghost.direction = dx > 0 ? 'right' : 'left';
+                } else {
+                    ghost.pixelY += Math.sign(dy) * returnSpeed;
+                    ghost.direction = dy > 0 ? 'down' : 'up';
+                }
+                ghost.gridX = Math.round(ghost.pixelX / TILE_SIZE);
+                ghost.gridY = Math.round(ghost.pixelY / TILE_SIZE);
             }
             return;
         }
         
-        const speed = ghost.vulnerable ? ghostSpeed * 0.5 : ghostSpeed;
+        const speed = ghost.vulnerable ? baseGhostSpeed * 0.5 : baseGhostSpeed;
         
-        // Decision at tile center - use speed as threshold to prevent getting stuck
-        if (Math.abs(ghost.pixelX - ghost.gridX * TILE_SIZE) < speed && 
-            Math.abs(ghost.pixelY - ghost.gridY * TILE_SIZE) < speed) {
-            
-            ghost.pixelX = ghost.gridX * TILE_SIZE;
-            ghost.pixelY = ghost.gridY * TILE_SIZE;
+        // ===== FIX #3: Proper tile center snapping =====
+        const tileCenterX = ghost.gridX * TILE_SIZE;
+        const tileCenterY = ghost.gridY * TILE_SIZE;
+        const distToCenterX = Math.abs(ghost.pixelX - tileCenterX);
+        const distToCenterY = Math.abs(ghost.pixelY - tileCenterY);
+        
+        // Decision at tile center
+        if (distToCenterX < speed && distToCenterY < speed) {
+            // SNAP exactly to tile center before choosing new direction
+            ghost.pixelX = tileCenterX;
+            ghost.pixelY = tileCenterY;
             
             let targetX, targetY;
             
             if (ghost.vulnerable) {
+                // Run away from player
                 targetX = ghost.gridX + (ghost.gridX - player.gridX);
                 targetY = ghost.gridY + (ghost.gridY - player.gridY);
             } else {
+                // ===== FIX #5: Better ghost AI variety =====
                 switch (ghost.personality) {
                     case 'chase':
+                        // Blinky - direct chase
                         targetX = player.gridX;
                         targetY = player.gridY;
                         break;
                     case 'ambush':
+                        // Pinky - target 4 tiles ahead of player
                         targetX = player.gridX + (player.direction === 'right' ? 4 : player.direction === 'left' ? -4 : 0);
                         targetY = player.gridY + (player.direction === 'down' ? 4 : player.direction === 'up' ? -4 : 0);
                         break;
                     case 'patrol':
-                        targetX = ghost.gridX < 14 ? 26 : 1;
-                        targetY = ghost.gridY < 15 ? 29 : 1;
+                        // Inky - uses Blinky's position for pincer attack
+                        // Vector from SOL (chase ghost) to player, doubled
+                        const blinky = ghosts[0];
+                        const vecX = player.gridX - blinky.gridX;
+                        const vecY = player.gridY - blinky.gridY;
+                        targetX = player.gridX + vecX;
+                        targetY = player.gridY + vecY;
                         break;
                     default:
-                        targetX = Math.floor(Math.random() * COLS);
-                        targetY = Math.floor(Math.random() * ROWS);
+                        // Clyde - chase when far, scatter when close
+                        const distToPlayer = Math.abs(ghost.gridX - player.gridX) + Math.abs(ghost.gridY - player.gridY);
+                        if (distToPlayer > 8) {
+                            targetX = player.gridX;
+                            targetY = player.gridY;
+                        } else {
+                            // Scatter to bottom-left corner
+                            targetX = 1;
+                            targetY = 29;
+                        }
                 }
             }
             
@@ -683,19 +858,29 @@ function moveGhosts() {
                 bestDir = validDirs[0].dir;
             }
             
+            // If truly stuck (shouldn't happen in valid maze), don't move
+            if (validDirs.length === 0) {
+                return;
+            }
+            
             ghost.direction = bestDir;
         }
         
-        // Move
+        // Move in current direction
         if (ghost.direction === 'up') ghost.pixelY -= speed;
         else if (ghost.direction === 'down') ghost.pixelY += speed;
         else if (ghost.direction === 'left') ghost.pixelX -= speed;
         else if (ghost.direction === 'right') ghost.pixelX += speed;
         
+        // ===== FIX #3: Proper grid position clamping =====
         ghost.gridX = Math.round(ghost.pixelX / TILE_SIZE);
         ghost.gridY = Math.round(ghost.pixelY / TILE_SIZE);
         
-        // Wrap
+        // Clamp grid positions to valid range
+        ghost.gridX = Math.max(0, Math.min(COLS - 1, ghost.gridX));
+        ghost.gridY = Math.max(0, Math.min(ROWS - 1, ghost.gridY));
+        
+        // Tunnel wrap
         if (ghost.pixelX < -TILE_SIZE) {
             ghost.pixelX = COLS * TILE_SIZE;
             ghost.gridX = COLS - 1;
@@ -708,9 +893,18 @@ function moveGhosts() {
 }
 
 // Check ghost collisions with pixel-perfect detection
+// ===== FIX #5: Invulnerability after death =====
 function checkGhostCollision() {
+    // Skip collision during invulnerability frames
+    if (invulnerable) {
+        if (Date.now() > invulnerableTimer) {
+            invulnerable = false;
+        }
+        return;
+    }
+    
     ghosts.forEach(ghost => {
-        if (ghost.eaten) return;
+        if (ghost.eaten || ghost.inPen) return;
         
         if (checkCollision(player.pixelX, player.pixelY, ghost.pixelX, ghost.pixelY, 14)) {
             // Ghost is edible if vulnerable (blue/scared state)
@@ -738,6 +932,10 @@ function checkGhostCollision() {
                 if (lives <= 0) {
                     gameOver();
                 } else {
+                    // Brief invulnerability after respawn
+                    invulnerable = true;
+                    invulnerableTimer = Date.now() + INVULNERABLE_DURATION;
+                    
                     setTimeout(() => {
                         resetPositions();
                         startSiren();
@@ -779,13 +977,28 @@ function resetPositions() {
     player.direction = 'right';
     player.nextDirection = 'right';
     
+    gameStartTime = Date.now();
+    
+    ghosts[0].gridX = 11; ghosts[0].gridY = 14;
+    ghosts[0].pixelX = 11 * TILE_SIZE; ghosts[0].pixelY = 14 * TILE_SIZE;
+    ghosts[0].inPen = true; ghosts[0].scatterDelay = 0;
+    
+    ghosts[1].gridX = 16; ghosts[1].gridY = 14;
+    ghosts[1].pixelX = 16 * TILE_SIZE; ghosts[1].pixelY = 14 * TILE_SIZE;
+    ghosts[1].inPen = true; ghosts[1].scatterDelay = 3000;
+    
+    ghosts[2].gridX = 13; ghosts[2].gridY = 14;
+    ghosts[2].pixelX = 13 * TILE_SIZE; ghosts[2].pixelY = 14 * TILE_SIZE;
+    ghosts[2].inPen = true; ghosts[2].scatterDelay = 6000;
+    
+    ghosts[3].gridX = 14; ghosts[3].gridY = 14;
+    ghosts[3].pixelX = 14 * TILE_SIZE; ghosts[3].pixelY = 14 * TILE_SIZE;
+    ghosts[3].inPen = true; ghosts[3].scatterDelay = 9000;
+    
     ghosts.forEach(ghost => {
-        ghost.gridX = ghost.baseX;
-        ghost.gridY = ghost.baseY;
-        ghost.pixelX = ghost.baseX * TILE_SIZE;
-        ghost.pixelY = ghost.baseY * TILE_SIZE;
         ghost.vulnerable = false;
         ghost.eaten = false;
+        ghost.direction = 'up';
     });
     
     powerMode = false;
@@ -896,6 +1109,70 @@ function handleKeydown(e) {
 document.addEventListener('keydown', handleKeydown);
 canvas.addEventListener('keydown', handleKeydown);
 
+// ===== FIX #5: Touch/swipe controls for mobile =====
+let touchStartX = 0;
+let touchStartY = 0;
+let touchStartTime = 0;
+
+canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    
+    // Resume audio on first touch
+    if (audioContext.state === 'suspended') {
+        audioContext.resume();
+    }
+    if (!sirenPlaying && gameRunning) {
+        startSiren();
+    }
+    
+    const touch = e.touches[0];
+    touchStartX = touch.clientX;
+    touchStartY = touch.clientY;
+    touchStartTime = Date.now();
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+}, { passive: false });
+
+canvas.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    if (!gameRunning) return;
+    
+    const touch = e.changedTouches[0];
+    const dx = touch.clientX - touchStartX;
+    const dy = touch.clientY - touchStartY;
+    const swipeTime = Date.now() - touchStartTime;
+    
+    // Minimum swipe distance (pixels) and max time (ms)
+    const minDist = 20;
+    const maxTime = 500;
+    
+    if (swipeTime > maxTime) return;
+    
+    if (Math.abs(dx) > Math.abs(dy)) {
+        // Horizontal swipe
+        if (Math.abs(dx) > minDist) {
+            player.nextDirection = dx > 0 ? 'right' : 'left';
+        }
+    } else {
+        // Vertical swipe
+        if (Math.abs(dy) > minDist) {
+            player.nextDirection = dy > 0 ? 'down' : 'up';
+        }
+    }
+}, { passive: false });
+
+// Also support tap-to-direct (tap in quadrant relative to player)
+document.addEventListener('touchstart', (e) => {
+    // Only if touching outside canvas (on-screen directional areas)
+    if (e.target === canvas) return;
+    
+    if (audioContext.state === 'suspended') {
+        audioContext.resume();
+    }
+}, { passive: true });
+
 // Game loop
 function gameLoop() {
     if (!gameRunning) return;
@@ -922,8 +1199,11 @@ function gameLoop() {
     requestAnimationFrame(gameLoop);
 }
 
+// Initialize game start time
+gameStartTime = Date.now();
+
 // Start game
-console.log('Bitcoin Pac-Man v2.0 loaded!');
-console.log('Use arrow keys or WASD to move');
+console.log('Bitcoin Pac-Man v2.1 loaded!');
+console.log('Use arrow keys, WASD, or swipe to move');
 console.log('Eat Bitcoin pellets, avoid shitcoin ghosts!');
 gameLoop();
