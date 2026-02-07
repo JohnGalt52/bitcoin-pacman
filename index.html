@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bitcoin Pac-Man v2.0 - Eat Sats, Avoid Shitcoins!</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Bitcoin Grepples-Man v4.0 - Eat Sats, Avoid Shitcoins!</title>
     <style>
         * {
             margin: 0;
@@ -21,6 +21,7 @@
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             color: #fff;
             padding: 20px;
+            overflow-x: hidden;
         }
         
         h1 {
@@ -47,11 +48,15 @@
             box-shadow: 0 0 30px rgba(247, 147, 26, 0.5),
                         inset 0 0 20px rgba(0, 0, 0, 0.5);
             background: #000;
+            max-width: 560px;
+            width: 100%;
         }
         
         #gameCanvas {
             display: block;
             border-radius: 6px;
+            width: 100%;
+            height: auto;
         }
         
         #stats {
@@ -96,6 +101,8 @@
             text-align: center;
             border: 3px solid #f7931a;
             box-shadow: 0 0 50px rgba(247, 147, 26, 0.5);
+            width: 80%;
+            max-width: 400px;
         }
         
         #gameOver h2 {
@@ -136,6 +143,7 @@
             background: rgba(0, 0, 0, 0.3);
             border-radius: 8px;
             max-width: 560px;
+            width: 100%;
             text-align: center;
         }
         
@@ -158,6 +166,7 @@
             background: rgba(0, 0, 0, 0.3);
             border-radius: 8px;
             max-width: 560px;
+            width: 100%;
         }
         
         .ghost-item {
@@ -208,10 +217,103 @@
             color: #f7931a;
             text-decoration: none;
         }
+        
+        /* ========== MOBILE RESPONSIVE ========== */
+        @media screen and (max-width: 600px) {
+            body {
+                padding: 8px;
+                justify-content: flex-start;
+            }
+            
+            h1 {
+                font-size: 1.5em;
+                margin-bottom: 4px;
+            }
+            
+            .subtitle {
+                font-size: 0.85em;
+                margin-bottom: 8px;
+            }
+            
+            #gameContainer {
+                border-width: 2px;
+                border-radius: 6px;
+            }
+            
+            #stats {
+                margin-top: 8px;
+                padding: 8px;
+                gap: 4px;
+            }
+            
+            .stat-label {
+                font-size: 0.7em;
+                letter-spacing: 0;
+            }
+            
+            .stat-value {
+                font-size: 1.3em;
+            }
+            
+            .ghost-legend {
+                display: none;
+            }
+            
+            .instructions {
+                display: none;
+            }
+            
+            .credits {
+                margin-top: 10px;
+                font-size: 0.7em;
+            }
+            
+            #gameOver {
+                padding: 20px;
+            }
+            
+            #gameOver h2 {
+                font-size: 1.8em;
+                margin-bottom: 10px;
+            }
+            
+            #gameOver p {
+                font-size: 1em;
+                margin-bottom: 15px;
+            }
+            
+            #gameOver button {
+                padding: 12px 30px;
+                font-size: 1em;
+            }
+        }
+        
+        @media screen and (max-width: 400px) {
+            body {
+                padding: 4px;
+            }
+            
+            h1 {
+                font-size: 1.2em;
+            }
+            
+            .subtitle {
+                font-size: 0.75em;
+                margin-bottom: 4px;
+            }
+            
+            #stats {
+                padding: 6px;
+            }
+            
+            .stat-value {
+                font-size: 1.1em;
+            }
+        }
     </style>
 </head>
 <body>
-    <h1>₿itcoin <span>Pac-Man</span></h1>
+    <h1>₿itcoin <span>Grepples-Man</span></h1>
     <p class="subtitle">Eat Sats 🟠 Avoid Shitcoins 👻 Stack Value</p>
     
     <div id="gameContainer">
@@ -263,6 +365,7 @@
         <h3>How to Play</h3>
         <p>
             <strong>Click the game</strong> to start, then use <strong>Arrow Keys</strong> or <strong>WASD</strong> to move.<br>
+            On mobile, <strong>swipe</strong> in any direction to move.<br>
             Collect ₿ pellets to stack sats. Grab the <strong>big ₿ power pellets</strong> to eat the shitcoins!<br>
             Each ghost eaten in power mode: 200 → 400 → 800 → 1600 points!
         </p>

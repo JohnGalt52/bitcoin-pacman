@@ -1,6 +1,6 @@
-// Bitcoin Pac-Man v3.0 - Major Fix Edition
-// Fixes: bulletproof ghost pen exit, level complete celebration, proper level reset
-// Added: inPen flag system, celebration sequence, READY! countdown
+// Bitcoin Grepples-Man v4.0 - Simplified Ghost Spawn + Random Wall Colors
+// Fixes: Ghosts spawn ABOVE pen (no pen exit logic), random wall colors per level
+// No more pen logic - ghosts spawn at row 11 with staggered timers
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
@@ -8,7 +8,7 @@ const ctx = canvas.getContext('2d');
 canvas.tabIndex = 1;
 canvas.focus();
 
-// Increase canvas resolution for sharper graphics
+// Canvas internal resolution (CSS handles visual scaling)
 canvas.width = 560;  // 28 * 20
 canvas.height = 620; // 31 * 20
 
@@ -28,7 +28,7 @@ let score = 0;
 let lives = 3;
 let level = 1;
 let gameRunning = true;
-let gamePaused = false; // NEW: pause flag for celebrations/countdown
+let gamePaused = false;
 let pelletCount = 0;
 let powerMode = false;
 let powerModeTimer = 0;
@@ -37,16 +37,31 @@ let ghostEatCombo = 0;
 let invulnerable = false;
 let invulnerableTimer = 0;
 const INVULNERABLE_DURATION = 2000;
-let gameStartTime = 0;
 
-// NEW: Celebration / countdown state
+// CRITICAL: gameStartTime tracks when gameplay begins (for ghost spawn timing)
+let gameStartTime = Date.now();
+
+// Wall color palettes - randomized on level change (Level 1 stays classic blue)
+const WALL_PALETTES = [
+    { main: '#2121ff', dark: '#0000aa', highlight: '#4444ff' },  // Classic blue (Level 1)
+    { main: '#ff2121', dark: '#aa0000', highlight: '#ff4444' },  // Red
+    { main: '#21ff21', dark: '#00aa00', highlight: '#44ff44' },  // Green
+    { main: '#ff21ff', dark: '#aa00aa', highlight: '#ff44ff' },  // Purple/Magenta
+    { main: '#ff8c21', dark: '#aa5500', highlight: '#ffaa44' },  // Orange
+    { main: '#21ffff', dark: '#00aaaa', highlight: '#44ffff' },  // Cyan
+    { main: '#ff69b4', dark: '#aa3366', highlight: '#ff8fc4' },  // Pink
+    { main: '#ffd700', dark: '#aa8c00', highlight: '#ffe944' },  // Gold
+];
+let currentWallColors = WALL_PALETTES[0]; // Start with classic blue
+
+// Celebration / countdown state
 let celebrationActive = false;
 let celebrationStartTime = 0;
-let celebrationLevel = 0; // The level that was just completed
+let celebrationLevel = 0;
 let countdownActive = false;
 let countdownStartTime = 0;
 let countdownText = '';
-let mazeFlashColor = null; // For wall flash effect
+let mazeFlashColor = null;
 
 // Player
 const player = {
@@ -113,29 +128,32 @@ function drawPacmanImage(x, y, size, direction) {
     ctx.restore();
 }
 
-// Ghost starting positions inside the ghost pen
-// Ghost pen area: rows 12-16, cols 10-17
-// Exit column: 13-14, exit row: 11 (just above pen gate)
+// Ghost definitions
+// NEW: Ghosts spawn ABOVE the pen at row 11 (exit row) - no pen exit logic needed!
+// spawnDelay: milliseconds after gameStartTime when ghost becomes visible
+// visible: false = waiting to spawn, true = active in playfield
+// SOL spawns immediately (0), ETH at 3s, ADA at 6s, XRP at 9s
+const GHOST_SPAWN_ROW = 11;  // Row above the pen - ghosts spawn here directly
 const ghosts = [
     { name: 'SOL', color: '#14F195', gradient: ['#14F195', '#9945FF'],
-      gridX: 11, gridY: 14, pixelX: 11*TILE_SIZE, pixelY: 14*TILE_SIZE,
-      direction: 'up', personality: 'chase', vulnerable: false, eaten: false,
-      baseX: 13, baseY: 14, inPen: true, scatterDelay: 0 },
+      gridX: 13, gridY: GHOST_SPAWN_ROW, pixelX: 13*TILE_SIZE, pixelY: GHOST_SPAWN_ROW*TILE_SIZE,
+      direction: 'left', personality: 'chase', vulnerable: false, eaten: false,
+      baseX: 13, baseY: 14, visible: true, spawnDelay: 0 },
 
     { name: 'ETH', color: '#627EEA', gradient: ['#627EEA', '#8A9EFF'],
-      gridX: 16, gridY: 14, pixelX: 16*TILE_SIZE, pixelY: 14*TILE_SIZE,
-      direction: 'up', personality: 'ambush', vulnerable: false, eaten: false,
-      baseX: 14, baseY: 14, inPen: true, scatterDelay: 3000 },
+      gridX: 13, gridY: GHOST_SPAWN_ROW, pixelX: 13*TILE_SIZE, pixelY: GHOST_SPAWN_ROW*TILE_SIZE,
+      direction: 'left', personality: 'ambush', vulnerable: false, eaten: false,
+      baseX: 14, baseY: 14, visible: false, spawnDelay: 3000 },
 
     { name: 'ADA', color: '#0033AD', gradient: ['#0033AD', '#0052FF'],
-      gridX: 13, gridY: 14, pixelX: 13*TILE_SIZE, pixelY: 14*TILE_SIZE,
-      direction: 'up', personality: 'patrol', vulnerable: false, eaten: false,
-      baseX: 13, baseY: 14, inPen: true, scatterDelay: 6000 },
+      gridX: 13, gridY: GHOST_SPAWN_ROW, pixelX: 13*TILE_SIZE, pixelY: GHOST_SPAWN_ROW*TILE_SIZE,
+      direction: 'left', personality: 'patrol', vulnerable: false, eaten: false,
+      baseX: 13, baseY: 14, visible: false, spawnDelay: 6000 },
 
     { name: 'XRP', color: '#23292F', gradient: ['#23292F', '#555'],
-      gridX: 14, gridY: 14, pixelX: 14*TILE_SIZE, pixelY: 14*TILE_SIZE,
-      direction: 'up', personality: 'random', vulnerable: false, eaten: false,
-      baseX: 14, baseY: 14, inPen: true, scatterDelay: 9000 }
+      gridX: 13, gridY: GHOST_SPAWN_ROW, pixelX: 13*TILE_SIZE, pixelY: GHOST_SPAWN_ROW*TILE_SIZE,
+      direction: 'left', personality: 'random', vulnerable: false, eaten: false,
+      baseX: 14, baseY: 14, visible: false, spawnDelay: 9000 }
 ];
 
 // Original maze layout (stored once for resets)
@@ -333,26 +351,23 @@ function playDeathSound() {
     osc.stop(audioContext.currentTime + 0.8);
 }
 
-// NEW: Enhanced victory sound - big ascending fanfare
 function playVictorySound() {
     const notes = [
-        { freq: 523, delay: 0,    dur: 0.15, type: 'square' },   // C5
-        { freq: 587, delay: 0.12, dur: 0.15, type: 'square' },   // D5
-        { freq: 659, delay: 0.24, dur: 0.15, type: 'square' },   // E5
-        { freq: 784, delay: 0.36, dur: 0.15, type: 'square' },   // G5
-        { freq: 880, delay: 0.48, dur: 0.2,  type: 'square' },   // A5
-        { freq: 1047, delay: 0.6, dur: 0.4,  type: 'square' },   // C6 (hold)
-        // Harmony layer
-        { freq: 392, delay: 0,    dur: 0.15, type: 'triangle' }, // G4
-        { freq: 440, delay: 0.12, dur: 0.15, type: 'triangle' }, // A4
-        { freq: 494, delay: 0.24, dur: 0.15, type: 'triangle' }, // B4
-        { freq: 587, delay: 0.36, dur: 0.15, type: 'triangle' }, // D5
-        { freq: 659, delay: 0.48, dur: 0.2,  type: 'triangle' }, // E5
-        { freq: 784, delay: 0.6,  dur: 0.4,  type: 'triangle' }, // G5 (hold)
-        // Final sparkle
-        { freq: 1319, delay: 0.85, dur: 0.3, type: 'sine' },    // E6
-        { freq: 1568, delay: 0.95, dur: 0.3, type: 'sine' },    // G6
-        { freq: 2093, delay: 1.05, dur: 0.5, type: 'sine' },    // C7
+        { freq: 523, delay: 0,    dur: 0.15, type: 'square' },
+        { freq: 587, delay: 0.12, dur: 0.15, type: 'square' },
+        { freq: 659, delay: 0.24, dur: 0.15, type: 'square' },
+        { freq: 784, delay: 0.36, dur: 0.15, type: 'square' },
+        { freq: 880, delay: 0.48, dur: 0.2,  type: 'square' },
+        { freq: 1047, delay: 0.6, dur: 0.4,  type: 'square' },
+        { freq: 392, delay: 0,    dur: 0.15, type: 'triangle' },
+        { freq: 440, delay: 0.12, dur: 0.15, type: 'triangle' },
+        { freq: 494, delay: 0.24, dur: 0.15, type: 'triangle' },
+        { freq: 587, delay: 0.36, dur: 0.15, type: 'triangle' },
+        { freq: 659, delay: 0.48, dur: 0.2,  type: 'triangle' },
+        { freq: 784, delay: 0.6,  dur: 0.4,  type: 'triangle' },
+        { freq: 1319, delay: 0.85, dur: 0.3, type: 'sine' },
+        { freq: 1568, delay: 0.95, dur: 0.3, type: 'sine' },
+        { freq: 2093, delay: 1.05, dur: 0.5, type: 'sine' },
     ];
     
     notes.forEach(note => {
@@ -369,7 +384,6 @@ function playVictorySound() {
     });
 }
 
-// OLD: simpler level up sound (kept for reference, replaced by playVictorySound)
 function playLevelUpSound() {
     [0, 0.1, 0.2, 0.3].forEach((delay, i) => {
         const osc = audioContext.createOscillator();
@@ -385,7 +399,6 @@ function playLevelUpSound() {
     });
 }
 
-// NEW: "READY!" beep
 function playReadySound() {
     const osc = audioContext.createOscillator();
     const gain = audioContext.createGain();
@@ -499,7 +512,6 @@ function drawEatenGhost(ctx, ghost, x, y, size) {
     ctx.fill();
 }
 
-// Draw maze with optional wall flash color override
 function drawMaze() {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -512,20 +524,20 @@ function drawMaze() {
             
             if (cell === 1) {
                 if (mazeFlashColor) {
-                    // Celebration wall flash
                     ctx.fillStyle = mazeFlashColor;
                     ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
                     ctx.strokeStyle = '#fff';
                     ctx.lineWidth = 1;
                     ctx.strokeRect(x + 1, y + 1, TILE_SIZE - 2, TILE_SIZE - 2);
                 } else {
+                    // Use currentWallColors (randomized per level, Level 1 = blue)
                     const wallGrad = ctx.createLinearGradient(x, y, x + TILE_SIZE, y + TILE_SIZE);
-                    wallGrad.addColorStop(0, '#2121ff');
-                    wallGrad.addColorStop(1, '#0000aa');
+                    wallGrad.addColorStop(0, currentWallColors.main);
+                    wallGrad.addColorStop(1, currentWallColors.dark);
                     ctx.fillStyle = wallGrad;
                     ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
                     
-                    ctx.strokeStyle = '#4444ff';
+                    ctx.strokeStyle = currentWallColors.highlight;
                     ctx.lineWidth = 1;
                     ctx.strokeRect(x + 1, y + 1, TILE_SIZE - 2, TILE_SIZE - 2);
                 }
@@ -562,6 +574,9 @@ function drawPlayer() {
 
 function drawGhosts() {
     ghosts.forEach(ghost => {
+        // Don't draw ghosts that haven't spawned yet
+        if (!ghost.visible) return;
+        
         const x = ghost.pixelX;
         const y = ghost.pixelY;
         
@@ -692,108 +707,54 @@ function movePlayer() {
         updateSirenForPowerMode();
     }
     
-    // ===== ISSUE 2 FIX: Level complete triggers celebration =====
+    // Level complete triggers celebration
     if (pelletCount === 0) {
         startLevelCelebration();
     }
 }
 
-// ===== ISSUE 1 FIX: BULLETPROOF Ghost Pen Exit =====
-// Ghost pen area: rows 12-16, cols 10-17
-// Exit target: column 13, row 11 (above gate)
-// This is checked BEFORE any AI targeting
+// ========== SIMPLIFIED GHOST SPAWNING ==========
+// Ghosts spawn ABOVE the pen at row 11 - no pen exit logic needed!
+// They use a visibility flag and staggered spawn delays
 
-function isInPenArea(gridX, gridY) {
-    return gridY >= 12 && gridY <= 16 && gridX >= 10 && gridX <= 17;
-}
-
-function moveGhostOutOfPen(ghost) {
-    const EXIT_COL = 13;
-    const EXIT_ROW = 11; // Just above the pen gate at row 12
-    const penSpeed = 1.5;
-    
-    const targetExitPixelX = EXIT_COL * TILE_SIZE;
-    const targetExitPixelY = EXIT_ROW * TILE_SIZE;
-    
-    const currentGridY = Math.round(ghost.pixelY / TILE_SIZE);
-    
-    // PHASE 1: Move horizontally toward exit column (col 13)
-    const dx = targetExitPixelX - ghost.pixelX;
-    if (Math.abs(dx) > penSpeed) {
-        ghost.pixelX += Math.sign(dx) * penSpeed;
-        ghost.direction = dx > 0 ? 'right' : 'left';
-        ghost.gridX = Math.round(ghost.pixelX / TILE_SIZE);
-        ghost.gridY = Math.round(ghost.pixelY / TILE_SIZE);
-        return; // Still moving horizontally
-    }
-    
-    // Snap X to exit column
-    ghost.pixelX = targetExitPixelX;
-    ghost.gridX = EXIT_COL;
-    
-    // PHASE 2: Move UP toward exit row (row 11)
-    const dy = targetExitPixelY - ghost.pixelY;
-    if (Math.abs(dy) > penSpeed) {
-        ghost.pixelY += Math.sign(dy) * penSpeed;
-        ghost.direction = 'up';
-        ghost.gridY = Math.round(ghost.pixelY / TILE_SIZE);
-        return; // Still moving up
-    }
-    
-    // PHASE 3: Reached exit! Snap and release
-    ghost.pixelX = targetExitPixelX;
-    ghost.pixelY = targetExitPixelY;
-    ghost.gridX = EXIT_COL;
-    ghost.gridY = EXIT_ROW;
-    ghost.inPen = false;
-    ghost.direction = 'left'; // Start heading left
-    
-    console.log(`👻 ${ghost.name} exited the pen at (${ghost.gridX}, ${ghost.gridY})`);
-}
-
-// Ghost AI movement
 function moveGhosts() {
     const baseGhostSpeed = getGhostSpeed();
     const now = Date.now();
-    const elapsed = now - gameStartTime;
     
     ghosts.forEach(ghost => {
-        // ===== ISSUE 1 FIX: PEN EXIT IS ABSOLUTE FIRST PRIORITY =====
-        // Check inPen flag OR detect if ghost is physically in the pen area
-        if (ghost.inPen || (isInPenArea(ghost.gridX, ghost.gridY) && !ghost.eaten && ghost.gridY > 11)) {
-            // Force inPen true if they're physically in pen (safety net)
-            ghost.inPen = true;
-            
-            // Wait for scatter delay before exiting
-            if (elapsed < ghost.scatterDelay) {
-                // Bob up and down in pen while waiting
-                ghost.pixelY = ghost.baseY * TILE_SIZE + Math.sin(now / 300) * 3;
-                ghost.gridY = ghost.baseY;
-                return;
+        // ============================================================
+        // CHECK SPAWN TIMING: Make ghost visible when it's time
+        // ============================================================
+        if (!ghost.visible) {
+            if (now >= gameStartTime + ghost.spawnDelay) {
+                ghost.visible = true;
+                console.log(`👻 ${ghost.name} spawned at (${ghost.gridX}, ${ghost.gridY})`);
+            } else {
+                return; // Still waiting to spawn - do nothing
             }
-            
-            // Time to exit - this is the ONLY movement that runs while inPen
-            moveGhostOutOfPen(ghost);
-            return; // No other AI runs until pen exit is complete
         }
         
-        // ===== EATEN ghost returns to pen =====
+        // ============================================================
+        // EATEN ghost returns to spawn point then respawns
+        // ============================================================
         if (ghost.eaten) {
-            const dx = ghost.baseX * TILE_SIZE - ghost.pixelX;
-            const dy = ghost.baseY * TILE_SIZE - ghost.pixelY;
+            // Return to spawn row (row 11, col 13)
+            const targetX = 13 * TILE_SIZE;
+            const targetY = GHOST_SPAWN_ROW * TILE_SIZE;
+            const dx = targetX - ghost.pixelX;
+            const dy = targetY - ghost.pixelY;
             
             if (Math.abs(dx) < 4 && Math.abs(dy) < 4) {
-                // Arrived at base - become alive in pen
-                ghost.pixelX = ghost.baseX * TILE_SIZE;
-                ghost.pixelY = ghost.baseY * TILE_SIZE;
-                ghost.gridX = ghost.baseX;
-                ghost.gridY = ghost.baseY;
+                // Arrived - respawn immediately
+                ghost.pixelX = targetX;
+                ghost.pixelY = targetY;
+                ghost.gridX = 13;
+                ghost.gridY = GHOST_SPAWN_ROW;
                 ghost.eaten = false;
                 ghost.vulnerable = false;
-                ghost.inPen = true;
-                ghost.scatterDelay = 0; // Exit immediately when reviving
+                ghost.direction = 'left';
             } else {
-                // Fast return - move toward base ignoring walls
+                // Fast return - move toward spawn point ignoring walls
                 const returnSpeed = 4;
                 if (Math.abs(dx) > Math.abs(dy)) {
                     ghost.pixelX += Math.sign(dx) * returnSpeed;
@@ -808,7 +769,9 @@ function moveGhosts() {
             return;
         }
         
-        // ===== NORMAL AI MOVEMENT (only runs when NOT in pen) =====
+        // ============================================================
+        // NORMAL AI MOVEMENT
+        // ============================================================
         const speed = ghost.vulnerable ? baseGhostSpeed * 0.5 : baseGhostSpeed;
         
         const tileCenterX = ghost.gridX * TILE_SIZE;
@@ -927,7 +890,8 @@ function checkGhostCollision() {
     }
     
     ghosts.forEach(ghost => {
-        if (ghost.eaten || ghost.inPen) return;
+        // Skip ghosts that haven't spawned yet or are eaten
+        if (ghost.eaten || !ghost.visible) return;
         
         if (checkCollision(player.pixelX, player.pixelY, ghost.pixelX, ghost.pixelY, 14)) {
             if (ghost.vulnerable) {
@@ -986,9 +950,9 @@ function drawFloatingPoints() {
     ctx.textAlign = 'left';
 }
 
-// ===== ISSUE 3 FIX: Complete position reset =====
+// Reset positions (after death or level change)
 function resetPositions() {
-    // Reset ALL player state
+    // Reset player
     player.gridX = 13;
     player.gridY = 23;
     player.pixelX = 13 * TILE_SIZE;
@@ -996,30 +960,23 @@ function resetPositions() {
     player.direction = 'right';
     player.nextDirection = 'right';
     
+    // CRITICAL: Reset gameStartTime so spawn timers work correctly
     gameStartTime = Date.now();
     
-    // Reset ALL ghost state - back to pen with proper initial positions
-    ghosts[0].gridX = 11; ghosts[0].gridY = 14;
-    ghosts[0].pixelX = 11 * TILE_SIZE; ghosts[0].pixelY = 14 * TILE_SIZE;
-    ghosts[0].inPen = true; ghosts[0].scatterDelay = 0;
-    
-    ghosts[1].gridX = 16; ghosts[1].gridY = 14;
-    ghosts[1].pixelX = 16 * TILE_SIZE; ghosts[1].pixelY = 14 * TILE_SIZE;
-    ghosts[1].inPen = true; ghosts[1].scatterDelay = 3000;
-    
-    ghosts[2].gridX = 13; ghosts[2].gridY = 14;
-    ghosts[2].pixelX = 13 * TILE_SIZE; ghosts[2].pixelY = 14 * TILE_SIZE;
-    ghosts[2].inPen = true; ghosts[2].scatterDelay = 6000;
-    
-    ghosts[3].gridX = 14; ghosts[3].gridY = 14;
-    ghosts[3].pixelX = 14 * TILE_SIZE; ghosts[3].pixelY = 14 * TILE_SIZE;
-    ghosts[3].inPen = true; ghosts[3].scatterDelay = 9000;
-    
-    // Reset ALL ghost flags
-    ghosts.forEach(ghost => {
+    // Reset all ghosts to spawn position (row 11, above pen)
+    // They spawn at the same position but with staggered visibility
+    ghosts.forEach((ghost, i) => {
+        ghost.gridX = 13;
+        ghost.gridY = GHOST_SPAWN_ROW;
+        ghost.pixelX = 13 * TILE_SIZE;
+        ghost.pixelY = GHOST_SPAWN_ROW * TILE_SIZE;
         ghost.vulnerable = false;
         ghost.eaten = false;
-        ghost.direction = 'up';
+        ghost.direction = 'left';
+        
+        // Staggered spawn: SOL=0s, ETH=3s, ADA=6s, XRP=9s
+        ghost.spawnDelay = i * 3000;
+        ghost.visible = (i === 0); // Only SOL visible immediately
     });
     
     // Reset power mode
@@ -1035,51 +992,46 @@ function resetPositions() {
     floatingTexts = [];
 }
 
-// ===== ISSUE 2 & 3 FIX: Level celebration + proper reset =====
-
+// Level celebration
 function startLevelCelebration() {
-    // Stop normal gameplay
     gamePaused = true;
     celebrationActive = true;
     celebrationStartTime = Date.now();
-    celebrationLevel = level; // Remember which level was completed
+    celebrationLevel = level;
     
-    // Stop siren during celebration
     stopSiren();
-    
-    // Play victory fanfare
     playVictorySound();
     
+    // Pick random wall colors for the next level (Level 1 stays blue, so this is for Level 2+)
+    // Exclude the current color to ensure variety
+    const otherPalettes = WALL_PALETTES.filter(p => p.main !== currentWallColors.main);
+    currentWallColors = otherPalettes[Math.floor(Math.random() * otherPalettes.length)];
+    
     console.log(`🎉 Level ${celebrationLevel} COMPLETE! Starting celebration...`);
+    console.log(`🎨 Next level wall color: ${currentWallColors.main}`);
 }
 
-// Draw the celebration overlay
 function drawCelebration() {
     const now = Date.now();
     const elapsed = now - celebrationStartTime;
-    const CELEBRATION_DURATION = 3000; // 3 seconds
+    const CELEBRATION_DURATION = 3000;
     
-    // Flash maze walls (alternate colors every 200ms)
     const flashIndex = Math.floor(elapsed / 200) % 4;
     const flashColors = ['#f7931a', '#ff00ff', '#00ffff', '#ffff00'];
     mazeFlashColor = flashColors[flashIndex];
     
-    // Draw the maze with flashing walls
     drawMaze();
     
-    // Draw a semi-transparent overlay
     ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
-    // "LEVEL X COMPLETE!" text with scale animation
-    const scale = Math.min(1, elapsed / 500); // Scale up over 0.5s
-    const bounce = 1 + Math.sin(elapsed / 150) * 0.05; // Subtle bounce
+    const scale = Math.min(1, elapsed / 500);
+    const bounce = 1 + Math.sin(elapsed / 150) * 0.05;
     
     ctx.save();
     ctx.translate(canvas.width / 2, canvas.height / 2 - 30);
     ctx.scale(scale * bounce, scale * bounce);
     
-    // Shadow
     ctx.fillStyle = '#000';
     ctx.font = 'bold 36px Arial';
     ctx.textAlign = 'center';
@@ -1087,7 +1039,6 @@ function drawCelebration() {
     ctx.fillText(`LEVEL ${celebrationLevel}`, 2, 2);
     ctx.fillText('COMPLETE!', 2, 42);
     
-    // Main text (cycling colors)
     const hue = (elapsed / 5) % 360;
     ctx.fillStyle = `hsl(${hue}, 100%, 60%)`;
     ctx.fillText(`LEVEL ${celebrationLevel}`, 0, 0);
@@ -1095,7 +1046,6 @@ function drawCelebration() {
     
     ctx.restore();
     
-    // Show level transition: old → new
     if (elapsed > 1500) {
         const transAlpha = Math.min(1, (elapsed - 1500) / 500);
         ctx.globalAlpha = transAlpha;
@@ -1106,13 +1056,11 @@ function drawCelebration() {
         ctx.globalAlpha = 1;
     }
     
-    // Score display during celebration
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 18px Arial';
     ctx.textAlign = 'center';
     ctx.fillText(`Score: ${score}`, canvas.width / 2, canvas.height / 2 + 120);
     
-    // Sparkle particles
     for (let i = 0; i < 8; i++) {
         const angle = (elapsed / 500 + i * Math.PI / 4) % (Math.PI * 2);
         const radius = 80 + Math.sin(elapsed / 200 + i) * 20;
@@ -1128,22 +1076,18 @@ function drawCelebration() {
     
     ctx.textAlign = 'left';
     
-    // End celebration after duration
     if (elapsed >= CELEBRATION_DURATION) {
         celebrationActive = false;
         mazeFlashColor = null;
         
-        // NOW increment level and reset
         level++;
         updateStats();
         resetLevel();
         
-        // Start countdown before gameplay resumes
         startCountdown();
     }
 }
 
-// ===== ISSUE 3 FIX: Countdown before gameplay resumes =====
 function startCountdown() {
     countdownActive = true;
     countdownStartTime = Date.now();
@@ -1155,14 +1099,12 @@ function startCountdown() {
 function drawCountdown() {
     const now = Date.now();
     const elapsed = now - countdownStartTime;
-    const COUNTDOWN_DURATION = 2000; // 2 seconds: "READY!" for 1s, "GO!" for 0.5s, then play
+    const COUNTDOWN_DURATION = 2000;
     
-    // Draw the maze and entities (frozen)
     drawMaze();
     drawPlayer();
     drawGhosts();
     
-    // Determine text
     let text = 'READY!';
     let textColor = '#ffff00';
     if (elapsed >= 1200) {
@@ -1170,25 +1112,21 @@ function drawCountdown() {
         textColor = '#00ff00';
     }
     
-    // Draw countdown text
     const pulse = 1 + Math.sin(elapsed / 100) * 0.1;
     
     ctx.save();
     ctx.translate(canvas.width / 2, canvas.height / 2);
     ctx.scale(pulse, pulse);
     
-    // Shadow
     ctx.fillStyle = '#000';
     ctx.font = 'bold 48px Arial';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(text, 2, 2);
     
-    // Main text
     ctx.fillStyle = textColor;
     ctx.fillText(text, 0, 0);
     
-    // Level indicator below
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 20px Arial';
     ctx.fillText(`Level ${level}`, 0, 40);
@@ -1196,34 +1134,37 @@ function drawCountdown() {
     ctx.restore();
     ctx.textAlign = 'left';
     
-    // End countdown
     if (elapsed >= COUNTDOWN_DURATION) {
         countdownActive = false;
-        gamePaused = false;
         
-        // Restart the siren
+        // CRITICAL: Ensure all game state is properly reset for the new level
+        gamePaused = false;
+        gameRunning = true;
+        
+        // Reset player direction to ensure movement works
+        player.direction = 'right';
+        player.nextDirection = 'right';
+        
+        // Reset gameStartTime for ghost spawn timers
+        gameStartTime = Date.now();
+        
         startSiren();
         
         console.log(`🎮 Level ${level} - GAME ON!`);
+        console.log(`🎨 Wall color: ${currentWallColors.main}`);
     }
 }
 
-// ===== ISSUE 3 FIX: Complete level reset =====
 function resetLevel() {
-    // Restore ALL maze pellets from the original
+    // Restore all maze pellets from original
     for (let row = 0; row < ROWS; row++) {
         for (let col = 0; col < COLS; col++) {
             maze[row][col] = ORIGINAL_MAZE[row][col];
         }
     }
     
-    // Recount pellets
     pelletCount = countPellets();
-    
-    // Reset ALL positions and state
     resetPositions();
-    
-    // Clear flash color
     mazeFlashColor = null;
     
     updateStats();
@@ -1284,7 +1225,7 @@ function handleKeydown(e) {
 document.addEventListener('keydown', handleKeydown);
 canvas.addEventListener('keydown', handleKeydown);
 
-// Touch/swipe controls
+// Touch/swipe controls with CSS scaling support
 let touchStartX = 0;
 let touchStartY = 0;
 let touchStartTime = 0;
@@ -1387,8 +1328,9 @@ function gameLoop() {
 // Initialize
 gameStartTime = Date.now();
 
-console.log('Bitcoin Pac-Man v3.0 loaded!');
-console.log('Fixes: bulletproof ghost pen exit, level celebration, proper reset');
+console.log('Bitcoin Grepples-Man v4.0 loaded!');
+console.log('Features: Simplified ghost spawning (no pen logic), random wall colors per level');
+console.log('Ghost spawn schedule: SOL=0s, ETH=3s, ADA=6s, XRP=9s');
 console.log('Use arrow keys, WASD, or swipe to move');
 console.log('Eat Bitcoin pellets, avoid shitcoin ghosts!');
 gameLoop();
